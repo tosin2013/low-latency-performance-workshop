@@ -1,0 +1,38 @@
+---
+name: modules
+title: Low-Latency Performance Workshop for OpenShift 4.19
+version: main
+nav:
+  - modules/ROOT/nav.adoc
+
+asciidoc:
+  attributes:
+    lab_name: Welcome to the Low-Latency Performance Workshop!
+    release-version: main
+    page-pagination: true
+    product_name: OpenShift 4.19
+    workshop_name: Low-Latency Performance Workshop
+    openshift_version: 4.19
+    kube_burner_version: 1.17+
+    guid: my-guid
+    ssh_user: ec2-user
+    ssh_password: ""
+    ssh_command: ssh ec2-user@bastion.{guid}.dynamic.redhatworkshops.io
+    cluster_api: https://api.cluster-{guid}.dynamic.redhatworkshops.io:6443
+    cluster_console: https://console-openshift-console.apps.cluster-{guid}.dynamic.redhatworkshops.io
+    infractl: oc
+    management_cli: oc
+  page-links:
+    - url: https://redhat.com
+      text: Red Hat
+    - url: https://docs.openshift.com/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html
+      text: OpenShift Low Latency Tuning
+    - url: https://kube-burner.github.io/kube-burner/latest/
+      text: Kube-burner Documentation
+    - url: https://github.com/tosin2013/low-latency-performance-workshop
+      text: Workshop Repository
+
+  extensions:
+    - ./content/lib/tab-block.js
+    - ./content/lib/remote-include-processor.js
+

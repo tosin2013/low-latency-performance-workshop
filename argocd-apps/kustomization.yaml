@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Performance Operators (Prerequisites for workshop)
+  # Note: Node Tuning Operator is built-in to OpenShift 4.11+
+  # Note: Performance Addon Operator deprecated in 4.11+ (functionality moved to Node Tuning Operator)
+  - sriov-network-operator.yaml
+  # OpenShift Virtualization (Module 5)
+  - openshift-virtualization-operator.yaml
+  - openshift-virtualization-instance.yaml

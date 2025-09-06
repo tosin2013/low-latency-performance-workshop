@@ -1,0 +1,46 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  name: tuned-vmi-{{.Iteration}}-{{.Replica}}
+  labels:
+    app: tuned-vmi-test
+    iteration: "{{.Iteration}}"
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker-rt: ""
+  domain:
+    cpu:
+      cores: 1
+      dedicatedCpuPlacement: true
+    memory:
+      guest: 1Gi
+      hugepages:
+        pageSize: 1Gi
+    devices:
+      disks:
+      - name: containerdisk
+        disk:
+          bus: virtio
+      - name: cloudinitdisk
+        disk:
+          bus: virtio
+      interfaces:
+      - name: default
+        masquerade: {}
+    machine:
+      type: pc-q35-rhel8.6.0
+  networks:
+  - name: default
+    pod: {}
+  volumes:
+  - name: containerdisk
+    containerDisk:
+      image: {{.vmImage}}
+  - name: cloudinitdisk
+    cloudInitNoCloud:
+      userData: |
+        #cloud-config
+        password: fedora
+        chpasswd: { expire: False }
+        bootcmd:
+          - "sleep 300"

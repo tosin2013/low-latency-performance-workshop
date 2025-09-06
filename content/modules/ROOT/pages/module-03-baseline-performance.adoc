@@ -1,0 +1,558 @@
+= Module 3: Baseline Performance Testing and Measurement
+
+[id="introduction"]
+== Module Overview
+
+In this module, you will establish baseline performance metrics for your OpenShift cluster before implementing any low-latency optimizations. Understanding your starting point is crucial for measuring the effectiveness of performance tuning efforts.
+
+By the end of this module, you will be able to:
+
+* Install and configure kube-burner for performance testing
+* Run baseline performance tests to measure pod creation latency
+* Analyze test results to understand current cluster performance
+* Interpret performance metrics including percentiles (P50, P95, P99)
+* Create a performance baseline document for future comparisons
+
+.*Lab Environment*
+[NOTE]
+====
+This module requires:
+
+* Access to your **target cluster** (managed cluster from Module 2) with cluster-admin privileges
+* The target cluster should be imported into RHACM and accessible via ArgoCD
+* Terminal access to a bastion host or local machine with `oc` CLI
+* Internet connectivity for downloading kube-burner
+* At least 2 GB of available memory on worker nodes for test workloads
+
+**Important**: This module should be executed on your **target cluster** (not the hub cluster), where performance tuning will be applied.
+====
+
+.*Performance Testing Overview*
+In this hands-on lab, you'll use kube-burner, a Kubernetes performance testing tool specifically designed to stress test OpenShift clusters. We'll focus on measuring pod creation latency, which is a critical metric for applications requiring fast scaling and low startup times.
+
+[id="connecting-to-target-cluster"]
+== Connecting to Your Target Cluster
+
+Before beginning performance testing, you must connect to your target cluster that was set up and imported in Module 2.
+
+.*Prerequisites Check*
+Ensure you completed Module 2 and have:
+
+* A target cluster imported into RHACM
+* SR-IOV Network Operator installed (if applicable)  
+* OpenShift Virtualization installed (if applicable)
+* Built-in Node Tuning Operator verified
+
+=== Step 1: Log into Your Target Cluster
+
+. From your hub cluster or workstation, connect to your target cluster:
++
+[source,bash,role=execute]
+----
+# If using RHACM, list your managed clusters first
+oc get managedclusters
+
+# Log into your target cluster (replace with your cluster details)
+# Option 1: Using cluster API URL and token
+oc login --token=<your-cluster-token> --server=https://api.<cluster-name>.<domain>:6443
+
+# Option 2: If you have multiple contexts configured
+oc config get-contexts
+oc config use-context <target-cluster-context>
+----
++
+[TIP]
+====
+If you don't have the login credentials for your target cluster:
+
+1. From RHACM console, navigate to "Infrastructure" → "Clusters"
+2. Find your target cluster and click on it
+3. Use the "Access cluster" or "Launch to cluster" option
+4. Copy the login command from the target cluster's web console
+====
+
+. Verify you're connected to the correct cluster:
++
+[source,bash,role=execute]
+----
+# Confirm cluster identity
+oc cluster-info
+
+# Check you're not on the hub cluster
+oc get managedclusters 2>/dev/null || echo "✅ Connected to target cluster (not hub)"
+
+# Verify cluster version matches expectations
+oc version --short
+----
+
+=== Step 2: Verify Target Cluster Status
+
+. Confirm the target cluster is ready for performance testing:
++
+[source,bash,role=execute]
+----
+# Check overall cluster health
+oc get nodes
+
+# Verify installed operators from Module 2
+oc get csv --all-namespaces | grep -E "(sriov|kubevirt|virtualization)"
+
+# Check built-in Node Tuning Operator
+oc get tuned -n openshift-cluster-node-tuning-operator
+----
+
+[id="what-is-low-latency"]
+== What is Low-Latency and Why Does it Matter?
+
+Low-latency computing refers to minimizing the delay between an input and its corresponding output. In containerized environments, this translates to:
+
+* *Pod Startup Time*: How quickly containers become ready to serve traffic
+* *Network Latency*: Time for network packets to traverse the cluster
+* *Storage I/O Latency*: Speed of persistent volume operations
+* *API Response Time*: Kubernetes API server responsiveness
+
+.*Critical Use Cases*
+Low-latency performance is essential for:
+
+* Financial trading systems requiring microsecond response times
+* Real-time gaming and streaming platforms
+* IoT edge computing applications
+* High-frequency data processing workloads
+* Live video/audio processing systems
+
+[id="verifying-target-cluster"]
+== Verifying Your Target Cluster Configuration
+
+Now that you're connected to your target cluster, let's verify it meets the requirements for performance testing and has the components installed from Module 2.
+
+. Verify cluster access and basic information:
++
+[source,bash,role=execute]
+----
+# Confirm cluster-admin access on target cluster
+oc auth can-i '*' '*'
+
+# Check OpenShift version (should be 4.11+ for modern performance features)
+oc get clusterversion
+
+# Get cluster name and basic info
+oc cluster-info | head -3
+----
+
+. Review the cluster nodes and their specifications:
++
+[source,bash,role=execute]
+----
+# List all nodes with detailed information
+oc get nodes -o wide
+
+# Check node resources
+oc describe nodes | grep -E "(Name:|cpu:|memory:|Capacity|Allocatable)"
+
+# Verify worker node count (minimum 3 recommended)
+oc get nodes --selector='node-role.kubernetes.io/worker' --no-headers | wc -l
+----
+
+. Confirm that operators from Module 2 are properly installed:
++
+[source,bash,role=execute]
+----
+# Check built-in Node Tuning Operator (OpenShift 4.11+)
+oc get tuned -n openshift-cluster-node-tuning-operator
+
+# Verify SR-IOV Network Operator (if installed)
+oc get csv -n openshift-sriov-network-operator 2>/dev/null || echo "SR-IOV not installed (optional)"
+
+# Check OpenShift Virtualization (if installed)  
+oc get csv -n openshift-cnv 2>/dev/null || echo "OpenShift Virtualization not installed (optional)"
+
+# Verify Performance Profile CRD is available
+oc get crd performanceprofiles.performance.openshift.io
+----
+
+[id="establishing-baseline"]
+== Establishing Baseline Performance Metrics
+
+Before implementing any performance optimizations, we need to establish baseline metrics on your target cluster. This provides a reference point for measuring the effectiveness of our tuning efforts in subsequent modules.
+
+[IMPORTANT]
+====
+**Why Test the Target Cluster?**
+
+We're running performance tests on the target cluster (not the hub cluster) because:
+
+* **Isolation**: Performance tuning will be applied to this cluster in later modules
+* **Safety**: Hub cluster remains stable for management operations
+* **Realism**: Tests run on the same environment that will be optimized
+* **Comparison**: Baseline and post-tuning metrics come from the same system
+====
+
+[id="performance-testing-environment"]
+=== Setting up the Performance Testing Environment
+
+. Create a dedicated namespace for performance testing:
++
+[source,bash,role=execute]
+----
+# Create performance testing namespace
+oc create namespace performance-testing
+
+# Set the namespace as current context
+oc project performance-testing
+
+# Verify namespace creation
+oc get project performance-testing
+----
+
+. Label worker nodes for performance testing (optional - helps with workload placement):
++
+[source,bash,role=execute]
+----
+# List worker nodes
+oc get nodes --selector='node-role.kubernetes.io/worker' --no-headers
+
+# Label nodes for performance testing (optional)
+# Replace 'worker-node-1' with actual node name
+# oc label node <worker-node-name> performance-testing=true
+----
+
+[id="install-kube-burner"]
+=== Installing kube-burner for Performance Testing
+
+Kube-burner is a performance testing tool designed specifically for Kubernetes clusters. It can stress-test various aspects of cluster performance.
+
+. Download and install kube-burner:
++
+[source,bash,role=execute]
+----
+# Create a directory for kube-burner
+mkdir -p ~/kube-burner && cd ~/kube-burner
+
+# Download the latest kube-burner binary for Linux
+curl -L https://github.com/kube-burner/kube-burner/archive/refs/tags/v1.17.4.tar.gz -o kube-burner.tar.gz
+
+# Extract the binary
+tar -xzf kube-burner.tar.gz
+
+# Make it executable and move to PATH
+
+# Temp
+curl -OL https://go.dev/dl/go1.25.1.linux-amd64.tar.gz
+sudo tar -C /usr/local -xvf go1.25.1.linux-amd64.tar.gz
+sudo yum install git 
+mkdir -p ~/go/{src,bin}
+echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+cd ~
+echo 'export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin' >> ~/.bashrc
+source .bashrc
+go
+cd kube-burner-1.17.4
+go build -o kube-burner
+chmod +x bin/amd64/kube-burner
+sudo mv bin/amd64/kube-burner /usr/local/bin/
+
+# Verify installation
+kube-burner version || echo "kube-burner installed successfully"
+----
+
+. Create a directory for kube-burner configuration files:
++
+[source,bash,role=execute]
+----
+# Create configuration directory
+mkdir -p ~/kube-burner-configs && cd ~/kube-burner-configs
+
+# Verify current directory
+pwd
+----
+
+. Create a baseline performance test configuration:
++
+[source,yaml,role=execute]
+----
+cat > baseline-config.yml << 'EOF'
+global:
+  measurements:
+    - name: podLatency
+      thresholds:
+        - conditionType: Ready
+          metric: P99
+          threshold: 30000ms
+
+metricsEndpoints:
+  - indexer:
+      type: local
+      metricsDirectory: collected-metrics
+
+jobs:
+  - name: baseline-workload
+    jobType: create
+    jobIterations: 20
+    namespace: baseline-workload
+    namespacedIterations: true
+    cleanup: false
+    podWait: false
+    waitWhenFinished: true
+    verifyObjects: true
+    errorOnVerify: false
+    objects:
+      - objectTemplate: pod.yml
+        replicas: 5
+        inputVars:
+          containerImage: registry.redhat.io/ubi8/ubi:latest
+EOF
+----
+
+. Create the pod template for the baseline test:
++
+[source,yaml,role=execute]
+----
+cat > pod.yml << 'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: baseline-pod-{{.Iteration}}-{{.Replica}}
+  labels:
+    app: baseline-test
+    iteration: "{{.Iteration}}"
+spec:
+  containers:
+  - name: baseline-container
+    image: {{.containerImage}}
+    command: ["sleep"]
+    args: ["300"]
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  restartPolicy: Never
+EOF
+----
+
+. Verify the configuration files:
++
+[source,bash,role=execute]
+----
+# List created configuration files
+ls -la ~/kube-burner-configs/
+
+# Validate YAML syntax
+cat baseline-config.yml | head -10
+cat pod.yml | head -10
+----
+
+[id="run-baseline-tests"]
+=== Running Baseline Performance Tests
+
+Now let's execute our baseline performance test to measure the current cluster performance.
+
+. Execute the baseline performance test using the kube-burner CLI:
++
+[source,bash,role=execute]
+----
+# Change to the configuration directory
+cd ~/kube-burner-configs
+
+# Run the baseline test
+kube-burner init -c baseline-config.yml --log-level=info
+
+# The test will create 20 iterations with 5 pods each (100 total pods)
+# and measure pod creation latency
+----
+
+. Monitor the test progress in a separate terminal:
++
+[source,bash,role=execute]
+----
+# Watch pods being created across namespases
+watch "oc get pods --all-namespaces | grep baseline"
+
+# Monitor cluster resource usage
+oc adm top nodes
+----
+
+. Wait for the test to complete. You should see output similar to:
++
+[source,bash]
+----
+INFO[2025-09-05T10:30:15Z] 📁 Creating directory: collected-metrics
+INFO[2025-09-05T10:30:15Z] 🔥 Starting kube-burner with UUID 12345678-1234-1234-1234-123456789abc
+INFO[2025-09-05T10:30:15Z] 📊 Job baseline-workload: 20 iterations
+INFO[2025-09-05T10:30:45Z] ✅ Job baseline-workload completed in 30s
+----
+
+[id="analyze-results"]
+=== Analyzing Baseline Results
+
+. View the pod latency metrics from the collected data:
++
+[source,bash,role=execute]
+----
+# Change to the kube-burner configuration directory
+cd ~/kube-burner-configs
+
+# Check if metrics were collected successfully
+if [ -d "collected-metrics" ]; then
+    echo "✅ Metrics collected successfully!"
+    echo ""
+
+    # View the pod latency quantiles (summary metrics)
+    echo "=== Pod Latency Summary ==="
+    find collected-metrics/ -name "*podLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.quantileName != null) | "\(.quantileName): P99=\(.P99)ms, P95=\(.P95)ms, P50=\(.P50)ms, Avg=\(.avg)ms, Max=\(.max)ms"' | sort
+
+    echo ""
+    echo "=== Individual Pod Metrics (first 5) ==="
+    find collected-metrics/ -name "*podLatencyMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.podName != null) | "\(.podName): Ready=\(.podReadyLatency)ms, ContainersReady=\(.containersReadyLatency)ms, Scheduled=\(.schedulingLatency)ms"' | head -5
+else
+    echo "❌ No metrics directory found. Checking log output..."
+    LATEST_LOG=$(ls -t kube-burner-*-*-*-*-*.log | head -1)
+    echo "Latest log: $LATEST_LOG"
+    echo ""
+    grep -E "(Ready|PodScheduled|ContainersReady|Initialized).*99th.*max.*avg" $LATEST_LOG || echo "No latency metrics found in log"
+fi
+----
+
+. Create a baseline results summary:
++
+[source,bash,role=execute]
+----
+# Ensure we're in the correct directory
+cd ~/kube-burner-configs
+
+# Get the latest log file and extract UUID
+LATEST_LOG=$(ls -t kube-burner-*-*-*-*-*.log | head -1)
+TEST_UUID=$(grep "Finished execution with UUID" $LATEST_LOG | grep -o "[a-f0-9-]*" | tail -1)
+
+# Create results summary
+cat > baseline-results-$(date +%Y%m%d).md << EOF
+# Baseline Performance Test Results - $(date)
+
+## Test Configuration
+- **Test Scale**: 100 pods (5 pods × 20 iterations)
+- **Container Image**: registry.redhat.io/ubi8/ubi:latest
+- **Test Type**: Pod creation latency measurement
+- **Test UUID**: $TEST_UUID
+
+## Pod Latency Results
+EOF
+
+# Check for structured metrics first (modern approach)
+if [ -d "collected-metrics" ] && [ -f "collected-metrics/"*"podLatencyQuantilesMeasurement"* ]; then
+    echo "" >> baseline-results-$(date +%Y%m%d).md
+    echo "### Latency Metrics (from structured data)" >> baseline-results-$(date +%Y%m%d).md
+
+    # Extract quantile metrics using jq
+    find collected-metrics/ -name "*podLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | \
+    jq -r '.[] | select(.quantileName != null) | "- **\(.quantileName)**: P99=\(.P99)ms, P95=\(.P95)ms, P50=\(.P50)ms, Avg=\(.avg)ms, Max=\(.max)ms"' | \
+    sort >> baseline-results-$(date +%Y%m%d).md
+
+    # Extract key insights from structured data
+    echo "" >> baseline-results-$(date +%Y%m%d).md
+    echo "## Key Insights" >> baseline-results-$(date +%Y%m%d).md
+    READY_AVG=$(find collected-metrics/ -name "*podLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.quantileName == "Ready") | .avg')
+    if [ ! -z "$READY_AVG" ] && [ "$READY_AVG" != "null" ]; then
+        READY_AVG_SEC=$(echo "scale=1; $READY_AVG / 1000" | bc 2>/dev/null || awk "BEGIN {print $READY_AVG/1000}")
+        echo "- Average pod startup time is ${READY_AVG_SEC} seconds" >> baseline-results-$(date +%Y%m%d).md
+    fi
+
+elif grep -q "99th.*max.*avg" $LATEST_LOG; then
+    # Fallback to log parsing (legacy approach)
+    echo "" >> baseline-results-$(date +%Y%m%d).md
+    echo "### Latency Metrics (from log output)" >> baseline-results-$(date +%Y%m%d).md
+    grep -E "(Ready|PodScheduled|ContainersReady|Initialized).*99th.*max.*avg" $LATEST_LOG | \
+    sed 's/.*baseline-workload: /- **/' | \
+    sed 's/ 50th:/ P50:/' | \
+    sed 's/ 99th:/ P99:/' | \
+    sed 's/ max:/ Max:/' | \
+    sed 's/ avg:/ Avg:/' | \
+    sed 's/$/ms**/' >> baseline-results-$(date +%Y%m%d).md
+
+    # Extract key insights from log
+    echo "" >> baseline-results-$(date +%Y%m%d).md
+    echo "## Key Insights" >> baseline-results-$(date +%Y%m%d).md
+    READY_AVG=$(grep "Ready.*avg:" $LATEST_LOG | grep -o "avg: [0-9]*" | cut -d' ' -f2)
+    if [ ! -z "$READY_AVG" ]; then
+        READY_AVG_SEC=$(echo "scale=1; $READY_AVG / 1000" | bc 2>/dev/null || awk "BEGIN {print $READY_AVG/1000}")
+        echo "- Average pod startup time is ${READY_AVG_SEC} seconds" >> baseline-results-$(date +%Y%m%d).md
+    fi
+else
+    echo "- No latency metrics found. Check if the test completed successfully." >> baseline-results-$(date +%Y%m%d).md
+    echo "- Last few lines of log:" >> baseline-results-$(date +%Y%m%d).md
+    echo '```' >> baseline-results-$(date +%Y%m%d).md
+    tail -5 $LATEST_LOG >> baseline-results-$(date +%Y%m%d).md
+    echo '```' >> baseline-results-$(date +%Y%m%d).md
+fi
+
+# Display the results
+cat baseline-results-$(date +%Y%m%d).md
+----
+
+. Clean up the test resources (optional):
++
+[source,bash,role=execute]
+----
+# Remove all baseline test namespaces
+oc get namespaces | grep baseline-workload | awk '{print $1}' | xargs -r oc delete namespace
+
+# Verify cleanup
+oc get namespaces | grep baseline-workload || echo "Cleanup completed successfully"
+----
+
+=== Understanding Your Results
+
+The baseline test measures several key metrics that are critical for low-latency applications:
+
+* *Pod Creation Latency*: Time from API request to pod ready state
+* *50th Percentile (P50)*: Median latency - half of requests complete faster
+* *95th Percentile (P95)*: 95% of requests complete within this time  
+* *99th Percentile (P99)*: 99% of requests complete within this time - critical for SLA compliance
+
+.*Expected Baseline Results*
+On an untuned cluster, you might see pod creation latencies like:
+* P50: ~2-5 seconds
+* P95: ~8-15 seconds
+* P99: ~15-30 seconds
+
+.*Next Steps*
+These baseline metrics will serve as your reference point. In subsequent modules, we'll implement various performance optimizations and measure their impact against these baseline numbers.
+
+.*Key Takeaways*
+Document these baseline metrics carefully - they represent your cluster's current performance characteristics and will help you:
+- Identify performance bottlenecks
+- Measure optimization effectiveness
+- Set realistic performance targets
+- Validate tuning changes
+
+== Module Summary
+
+In this module, you have successfully:
+
+✅ *Verified cluster readiness* for performance testing
+✅ *Installed kube-burner* performance testing tool
+✅ *Created baseline test configurations* for pod creation latency
+✅ *Executed baseline performance tests* to measure current cluster performance
+✅ *Analyzed test results* and documented baseline metrics
+✅ *Established a reference point* for measuring future optimizations
+
+.*What's Next?*
+In Module 4, we'll begin implementing core performance tuning optimizations on this same target cluster, including:
+- Performance Profiles for CPU isolation (using built-in Node Tuning Operator)
+- HugePages configuration
+- Real-time kernel enablement  
+- Node tuning optimizations
+
+These optimizations should significantly improve the latency metrics you've just measured in your baseline tests.
+
+[NOTE]
+====
+**Cluster Context for Next Modules**: 
+
+Stay connected to your target cluster for the remaining workshop modules. All performance tuning will be applied to this cluster, and you'll run comparison tests here to measure improvements against your baseline metrics.
+
+If you need to switch between hub and target clusters:
+- Hub cluster: For RHACM management and ArgoCD operations
+- Target cluster: For performance testing and tuning implementation
+====

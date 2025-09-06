@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tuned-pod-{{.Iteration}}-{{.Replica}}
+  labels:
+    app: tuned-test
+    iteration: "{{.Iteration}}"
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker-rt: ""
+  containers:
+  - name: tuned-container
+    image: {{.containerImage}}
+    command: ["sleep"]
+    args: ["300"]
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "100m"
+      limits:
+        memory: "128Mi"
+        cpu: "200m"
+  restartPolicy: Never

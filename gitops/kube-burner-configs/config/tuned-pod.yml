@@ -1,0 +1,29 @@
+global:
+  measurements:
+    - name: podLatency
+      thresholds:
+        - conditionType: Ready
+          metric: P99
+          threshold: 15000ms  # Expect better performance after tuning
+
+metricsEndpoints:
+  - indexer:
+      type: local
+      metricsDirectory: collected-metrics-tuned
+
+jobs:
+  - name: tuned-workload
+    jobType: create
+    jobIterations: 20
+    namespace: tuned-workload
+    namespacedIterations: true
+    cleanup: false
+    podWait: false
+    waitWhenFinished: true
+    verifyObjects: true
+    errorOnVerify: false
+    objects:
+      - objectTemplate: ../workloads/tuned-pod.yml
+        replicas: 5
+        inputVars:
+          containerImage: registry.redhat.io/ubi8/ubi:latest

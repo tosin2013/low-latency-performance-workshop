@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: workshop-baremetal
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+resources:
+  - ../../base
+
+patches:
+  - path: argocd-baremetal-patch.yaml
+    target:
+      kind: ArgoCD
+      name: workshop-argocd
+
+labels:
+- pairs:
+    app.kubernetes.io/part-of: low-latency-workshop
+    app.kubernetes.io/managed-by: kustomize
+    environment: baremetal
+
+namespace: openshift-gitops

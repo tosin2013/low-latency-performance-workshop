@@ -1,0 +1,34 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-tuning-operator
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/name: node-tuning-operator
+    app.kubernetes.io/part-of: low-latency-workshop
+spec:
+  project: low-latency-workshop
+  
+  source:
+    repoURL: https://github.com/tosin2013/low-latency-performance-workshop.git
+    targetRevision: HEAD
+    path: manifests/operators/node-tuning-operator
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-cluster-node-tuning-operator
+  
+  syncPolicy:
+    automated:
+      prune: false  # Don't auto-prune operators
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m

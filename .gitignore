@@ -1,0 +1,30 @@
+www/*
+.cache
+quickstart.sh
+node_modules
+.vscode
+.mcp-adr-cache
+
+# Dependencies
+/node_modules
+
+# Coverage
+/coverage
+
+# Build output
+/build
+/dist
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Other
+.DS_Store
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local

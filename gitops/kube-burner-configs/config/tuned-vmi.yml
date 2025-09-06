@@ -1,0 +1,29 @@
+global:
+  measurements:
+    - name: vmiLatency
+      thresholds:
+        - conditionType: VMIRunning
+          metric: P99
+          threshold: 45000ms  # VMIs take longer than pods
+
+metricsEndpoints:
+  - indexer:
+      type: local
+      metricsDirectory: collected-metrics-vmi
+
+jobs:
+  - name: tuned-vmi-workload
+    jobType: create
+    jobIterations: 10  # Fewer iterations for VMIs
+    namespace: tuned-vmi-workload
+    namespacedIterations: true
+    cleanup: false
+    podWait: false
+    waitWhenFinished: true
+    verifyObjects: true
+    errorOnVerify: false
+    objects:
+      - objectTemplate: ../workloads/tuned-vmi.yml
+        replicas: 2  # Fewer replicas for VMIs
+        inputVars:
+          vmImage: registry.redhat.io/ubi8/ubi:latest

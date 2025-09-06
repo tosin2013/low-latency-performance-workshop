@@ -1,0 +1,104 @@
+---
+apiVersion: argoproj.io/v1beta1
+kind: ArgoCD
+metadata:
+  name: workshop-argocd
+  namespace: openshift-gitops
+spec:
+  # Bare-metal specific configuration
+  server:
+    # Bare-metal specific route configuration
+    route:
+      enabled: true
+      annotations:
+        haproxy.router.openshift.io/timeout: 600s
+        haproxy.router.openshift.io/balance: roundrobin
+      tls:
+        termination: reencrypt
+        insecureEdgeTerminationPolicy: Redirect
+    # Conservative resource limits for bare-metal
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 125m
+        memory: 128Mi
+  
+  # Controller resources for bare-metal environment
+  controller:
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+      requests:
+        cpu: 250m
+        memory: 1Gi
+    # Bare-metal specific environment variables
+    env:
+    - name: ARGOCD_CONTROLLER_REPLICAS
+      value: "1"
+    - name: ARGOCD_CONTROLLER_LOGFORMAT
+      value: "text"
+    - name: ARGOCD_CONTROLLER_LOGLEVEL
+      value: "info"
+    - name: ARGOCD_CONTROLLER_REPO_SERVER_TIMEOUT_SECONDS
+      value: "300"
+  
+  # Repo server resources for bare-metal
+  repo:
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+    # Bare-metal specific configuration
+    env:
+    - name: ARGOCD_EXEC_TIMEOUT
+      value: "300s"
+    - name: ARGOCD_GIT_MODULES_ENABLED
+      value: "false"
+  
+  # Redis configuration for bare-metal
+  redis:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 250m
+        memory: 128Mi
+  
+  # ApplicationSet controller for bare-metal
+  applicationSet:
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+  
+  # Bare-metal specific repository configuration
+  repositories: |
+    - type: git
+      url: https://github.com/tosin2013/low-latency-performance-workshop.git
+      name: workshop-repo
+
+  # Bare-metal specific project configuration
+  projects: |
+    - name: workshop-baremetal
+      description: Low Latency Performance Workshop - Bare Metal Environment
+      sourceRepos:
+      - 'https://github.com/tosin2013/low-latency-performance-workshop.git'
+      destinations:
+      - namespace: '*'
+        server: https://kubernetes.default.svc
+      clusterResourceWhitelist:
+      - group: '*'
+        kind: '*'
+      namespaceResourceWhitelist:
+      - group: '*'
+        kind: '*'

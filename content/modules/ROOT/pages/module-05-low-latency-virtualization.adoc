@@ -1,0 +1,770 @@
+= Module 5: Low-Latency Virtualization
+
+[%hardbreaks]
+== Module Overview
+
+This module focuses on optimizing virtual machines for low-latency performance using OpenShift Virtualization. You'll learn how to configure VMs with dedicated CPUs, HugePages, and SR-IOV networking, then validate performance improvements using advanced kube-burner measurements.
+
+== Prerequisites
+
+* Completed Module 4 (Performance Profiles configured)
+* OpenShift Virtualization operator installed
+* Performance-tuned worker nodes (`worker-rt`) available
+* Baseline performance metrics from Module 3
+
+== Key Learning Objectives
+
+* Configure OpenShift Virtualization for low-latency workloads
+* Optimize Virtual Machine Instances (VMIs) with dedicated resources
+* Implement SR-IOV networking for high-performance VM networking
+* Measure VMI startup and network latency using kube-burner
+* Validate network policy performance in virtualized environments
+* Compare VM performance against containerized workloads
+
+[id="openshift-virtualization"]
+== OpenShift Virtualization Overview
+
+OpenShift Virtualization enables running virtual machines alongside containers on the same OpenShift cluster, providing:
+
+* **Unified Management**: VMs and containers managed through the same platform
+* **Performance Optimization**: CPU pinning, HugePages, and NUMA alignment
+* **Advanced Networking**: SR-IOV, Multus, and high-performance networking
+* **Live Migration**: Zero-downtime VM migration between nodes
+* **Security**: VM isolation with OpenShift security policies
+
+=== Architecture Components
+
+[cols="1,2,3"]
+|===
+| Component | Purpose | Low-Latency Features
+
+| **KubeVirt**
+| VM management engine
+| CPU pinning, dedicated resources
+
+| **Containerized Data Importer (CDI)**
+| VM disk image management
+| Optimized storage provisioning
+
+| **Multus CNI**
+| Multiple network interfaces
+| SR-IOV and high-performance networking
+
+| **Node Feature Discovery**
+| Hardware capability detection
+| NUMA topology awareness
+|===
+
+=== Verifying OpenShift Virtualization Installation
+
+OpenShift Virtualization was deployed in Module 2 via GitOps. Let's verify it's ready for low-latency workloads.
+
+. Check if OpenShift Virtualization is installed and ready:
++
+[source,bash,role=execute]
+----
+# Check the HyperConverged operator status
+oc get hyperconverged -n openshift-cnv
+
+# Verify virtualization components are running
+oc get pods -n openshift-cnv --field-selector=status.phase=Running
+
+# Check if virtualization is enabled on worker-rt nodes
+oc get nodes -l node-role.kubernetes.io/worker-rt -o jsonpath='{.items[*].status.allocatable.devices\.kubevirt\.io/kvm}' | grep -q "110" && echo "✅ KVM available on worker-rt nodes" || echo "❌ KVM not available"
+
+# Verify the operator CSV status
+oc get csv -n openshift-cnv | grep kubevirt-hyperconverged
+----
+
+. Check the HyperConverged configuration for performance features:
++
+[source,bash,role=execute]
+----
+# View current HyperConverged configuration
+oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o yaml | grep -A 20 "spec:"
+
+# Check if performance features are enabled
+echo "=== Performance Configuration Status ==="
+oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.spec.liveMigrationConfig}' | jq '.'
+oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.spec.virtualMachineOptions}' | jq '.'
+----
+
+. Verify that performance-tuned nodes are ready for VMs:
++
+[source,bash,role=execute]
+----
+# Check worker-rt nodes have the required labels and taints
+oc get nodes -l node-role.kubernetes.io/worker-rt -o custom-columns=NAME:.metadata.name,LABELS:.metadata.labels,TAINTS:.spec.taints
+
+# Verify HugePages are available on worker-rt nodes
+oc get nodes -l node-role.kubernetes.io/worker-rt -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.status.allocatable.hugepages-1Gi}{"\n"}{end}'
+
+# Check CPU isolation status
+oc get performanceprofile -o yaml | grep -A 10 -B 5 "isolated\|reserved"
+----
+
+[id="vm-optimization"]
+== VM Optimization for Low-Latency
+
+=== Understanding VM Performance Characteristics
+
+Virtual machines have different performance characteristics compared to containers:
+
+* **Boot Time**: VMs require OS initialization (typically 30-60 seconds)
+* **Resource Overhead**: Hypervisor and guest OS consume additional resources
+* **I/O Path**: Additional virtualization layer affects storage and network performance
+* **Memory Management**: Guest OS memory management plus hypervisor overhead
+
+=== Low-Latency VM Configuration
+
+==== CPU Optimization
+
+[cols="1,2,3"]
+|===
+| Feature | Purpose | Configuration
+
+| **CPU Pinning**
+| Dedicated CPU cores for VM
+| `dedicatedCpuPlacement: true`
+
+| **NUMA Alignment**
+| Memory and CPU on same NUMA node
+| Automatic with performance profile
+
+| **CPU Model**
+| Host CPU features exposed to VM
+| `cpu.model: host-passthrough`
+
+| **CPU Topology**
+| Optimal vCPU to pCPU mapping
+| Match host topology
+|===
+
+==== Memory Optimization
+
+[cols="1,2,3"]
+|===
+| Feature | Purpose | Configuration
+
+| **HugePages**
+| Reduced TLB misses
+| `hugepages.pageSize: 1Gi`
+
+| **Memory Backing**
+| Shared memory optimization
+| `memoryBacking.hugepages`
+
+| **NUMA Policy**
+| Memory locality
+| `numaPolicy: preferred`
+
+| **Memory Overcommit**
+| Disabled for predictable performance
+| `memoryOvercommitPercentage: 100`
+|===
+
+=== Creating a Low-Latency VM Template
+
+. Create a high-performance VM template:
++
+[source,yaml,role=execute]
+----
+cat << EOF | oc apply -f -
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: low-latency-vm-template
+  namespace: openshift-cnv
+  labels:
+    template.kubevirt.io/type: vm
+    template.kubevirt.io/version: v1alpha1
+objects:
+- apiVersion: kubevirt.io/v1
+  kind: VirtualMachine
+  metadata:
+    name: \${VM_NAME}
+    labels:
+      app: low-latency-vm
+      vm.kubevirt.io/template: low-latency-vm-template
+  spec:
+    running: false
+    template:
+      metadata:
+        labels:
+          kubevirt.io/vm: \${VM_NAME}
+      spec:
+        nodeSelector:
+          node-role.kubernetes.io/worker-rt: ""
+        domain:
+          cpu:
+            cores: 2
+            sockets: 1
+            threads: 1
+            dedicatedCpuPlacement: true
+            model: host-passthrough
+          memory:
+            guest: 2Gi
+            hugepages:
+              pageSize: 1Gi
+          devices:
+            disks:
+            - name: containerdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+            interfaces:
+            - name: default
+              masquerade: {}
+          machine:
+            type: pc-q35-rhel8.6.0
+        networks:
+        - name: default
+          pod: {}
+        volumes:
+        - name: containerdisk
+          containerDisk:
+            image: registry.redhat.io/ubi8/ubi:latest
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              password: redhat
+              chpasswd: { expire: False }
+              packages:
+                - qemu-guest-agent
+              runcmd:
+                - systemctl enable --now qemu-guest-agent
+parameters:
+- name: VM_NAME
+  description: Name of the Virtual Machine
+  required: true
+EOF
+----
+
+=== VMI Latency Testing with Kube-burner
+
+Now let's measure Virtual Machine Instance startup performance using kube-burner's VMI latency measurement capabilities.
+
+. Create a VMI-specific kube-burner configuration:
++
+[source,yaml,role=execute]
+----
+cd ~/kube-burner-configs
+
+cat << EOF > vmi-latency-config.yml
+global:
+  measurements:
+    - name: vmiLatency
+      thresholds:
+        - conditionType: VMIRunning
+          metric: P99
+          threshold: 45000ms
+        - conditionType: VMIScheduled
+          metric: P99
+          threshold: 30000ms
+
+metricsEndpoints:
+  - indexer:
+      type: local
+      metricsDirectory: collected-metrics-vmi
+
+jobs:
+  - name: vmi-latency-test
+    jobType: create
+    jobIterations: 10
+    namespace: vmi-latency-test
+    namespacedIterations: true
+    cleanup: false
+    podWait: false
+    waitWhenFinished: true
+    verifyObjects: true
+    errorOnVerify: false
+    objects:
+      - objectTemplate: low-latency-vmi.yml
+        replicas: 2
+        inputVars:
+          vmImage: registry.redhat.io/ubi8/ubi:latest
+EOF
+----
+
+. Create the low-latency VMI template for testing:
++
+[source,yaml,role=execute]
+----
+cat << EOF > low-latency-vmi.yml
+apiVersion: kubevirt.io/v1
+kind: VirtualMachineInstance
+metadata:
+  name: low-latency-vmi-{{.Iteration}}-{{.Replica}}
+  labels:
+    app: vmi-latency-test
+    iteration: "{{.Iteration}}"
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker-rt: ""
+  domain:
+    cpu:
+      cores: 1
+      dedicatedCpuPlacement: true
+      model: host-passthrough
+    memory:
+      guest: 1Gi
+      hugepages:
+        pageSize: 1Gi
+    devices:
+      disks:
+      - name: containerdisk
+        disk:
+          bus: virtio
+      - name: cloudinitdisk
+        disk:
+          bus: virtio
+      interfaces:
+      - name: default
+        masquerade: {}
+    machine:
+      type: pc-q35-rhel8.6.0
+  networks:
+  - name: default
+    pod: {}
+  volumes:
+  - name: containerdisk
+    containerDisk:
+      image: {{.vmImage}}
+  - name: cloudinitdisk
+    cloudInitNoCloud:
+      userData: |
+        #cloud-config
+        password: redhat
+        chpasswd: { expire: False }
+        bootcmd:
+          - "echo 'VMI started at' \$(date)"
+EOF
+----
+
+. Run the VMI latency test:
++
+[source,bash,role=execute]
+----
+# Execute the VMI latency test
+echo "🚀 Starting VMI latency performance test..."
+kube-burner init -c vmi-latency-config.yml --log-level=info
+
+# The test will create 20 VMIs (10 iterations × 2 replicas)
+# and measure VMI startup latency phases
+----
+
+. Monitor VMI creation progress:
++
+[source,bash,role=execute]
+----
+# Watch VMIs being created
+watch "oc get vmi --all-namespaces | grep vmi-latency-test"
+
+# Monitor VMI phases
+oc get vmi --all-namespaces -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,NODE:.status.nodeName | grep vmi-latency-test
+----
+
+=== Analyzing VMI Latency Results
+
+. Analyze the VMI latency test results:
++
+[source,bash,role=execute]
+----
+cd ~/kube-burner-configs
+
+# Check if VMI metrics were collected successfully
+if [ -d "collected-metrics-vmi" ]; then
+    echo "✅ VMI metrics collected successfully!"
+    echo ""
+
+    # View the VMI latency quantiles
+    echo "=== VMI Latency Summary ==="
+    find collected-metrics-vmi/ -name "*vmiLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.quantileName != null) | "\(.quantileName): P99=\(.P99)ms, P95=\(.P95)ms, P50=\(.P50)ms, Avg=\(.avg)ms, Max=\(.max)ms"' | sort
+
+    echo ""
+    echo "=== Individual VMI Metrics (first 5) ==="
+    find collected-metrics-vmi/ -name "*vmiLatencyMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.vmiName != null) | "\(.vmiName): VMIRunning=\(.vmiRunningLatency)ms, VMIScheduled=\(.vmiScheduledLatency)ms, PodReady=\(.podReadyLatency)ms"' | head -5
+
+else
+    echo "❌ No VMI metrics directory found. Checking log output..."
+    LATEST_LOG=$(ls -t kube-burner-*.log | head -1)
+    echo "Latest log: $LATEST_LOG"
+    tail -20 $LATEST_LOG
+fi
+----
+
+. Create VMI performance comparison report:
++
+[source,bash,role=execute]
+----
+# Compare VMI vs Pod performance
+cd ~/kube-burner-configs
+
+# Extract baseline pod metrics
+POD_READY_AVG=$(cat collected-metrics/podLatencyQuantilesMeasurement-baseline-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .avg' 2>/dev/null || echo "N/A")
+
+# Extract VMI metrics
+VMI_RUNNING_AVG=$(find collected-metrics-vmi/ -name "*vmiLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.quantileName == "VMIRunning") | .avg' 2>/dev/null || echo "N/A")
+
+# Create comparison report
+cat > vmi-performance-comparison-$(date +%Y%m%d).md << EOF
+# VMI vs Pod Performance Comparison - $(date)
+
+## Test Configuration
+- **Pod Test**: Standard containers (Module 3 baseline)
+- **VMI Test**: Low-latency VMs with dedicated CPUs and HugePages
+- **Scale**: 20 VMIs vs 100 Pods
+
+## Performance Comparison
+
+| Metric | Pods (Baseline) | VMIs (Low-Latency) | Difference |
+|--------|-----------------|-------------------|------------|
+| **Average Startup** | ${POD_READY_AVG}ms | ${VMI_RUNNING_AVG}ms | $(if [ "$POD_READY_AVG" != "N/A" ] && [ "$VMI_RUNNING_AVG" != "N/A" ]; then echo "scale=1; $VMI_RUNNING_AVG - $POD_READY_AVG" | bc 2>/dev/null | sed 's/$/ms slower/' || echo "TBD"; else echo "TBD"; fi) |
+
+## VMI Startup Phases
+EOF
+
+# Add VMI phase breakdown if available
+if [ -d "collected-metrics-vmi" ]; then
+    echo "" >> vmi-performance-comparison-$(date +%Y%m%d).md
+    echo "### VMI Latency Breakdown" >> vmi-performance-comparison-$(date +%Y%m%d).md
+    find collected-metrics-vmi/ -name "*vmiLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.quantileName != null) | "- **\(.quantileName)**: \(.avg)ms average"' >> vmi-performance-comparison-$(date +%Y%m%d).md
+fi
+
+echo "" >> vmi-performance-comparison-$(date +%Y%m%d).md
+echo "## Key Insights" >> vmi-performance-comparison-$(date +%Y%m%d).md
+echo "- VMIs have longer startup times due to OS boot process" >> vmi-performance-comparison-$(date +%Y%m%d).md
+echo "- Performance-tuned VMIs benefit from dedicated CPUs and HugePages" >> vmi-performance-comparison-$(date +%Y%m%d).md
+echo "- VMI scheduling is optimized for performance-tuned nodes" >> vmi-performance-comparison-$(date +%Y%m%d).md
+
+# Display the report
+echo "📊 VMI Performance Comparison Report:"
+echo "====================================="
+cat vmi-performance-comparison-$(date +%Y%m%d).md
+----
+
+[id="sr-iov"]
+== SR-IOV Configuration for High-Performance VM Networking
+
+SR-IOV (Single Root I/O Virtualization) provides direct hardware access to VMs, bypassing the software networking stack for maximum performance.
+
+=== Understanding SR-IOV Benefits
+
+[cols="1,2,3"]
+|===
+| Feature | Traditional Networking | SR-IOV Networking
+
+| **Latency**
+| Higher (software stack overhead)
+| Ultra-low (direct hardware access)
+
+| **Throughput**
+| Limited by host networking stack
+| Near line-rate performance
+
+| **CPU Usage**
+| Higher (packet processing overhead)
+| Lower (hardware offload)
+
+| **Isolation**
+| Software-based
+| Hardware-enforced
+|===
+
+=== Verifying SR-IOV Network Operator
+
+The SR-IOV Network Operator was deployed in Module 2. Let's verify it's ready:
+
+. Check SR-IOV operator status:
++
+[source,bash,role=execute]
+----
+# Check SR-IOV operator installation
+oc get csv -n openshift-sriov-network-operator
+
+# Verify SR-IOV operator pods
+oc get pods -n openshift-sriov-network-operator
+
+# Check if SR-IOV capable nodes are detected
+oc get sriovnetworknodestates -n openshift-sriov-network-operator
+----
+
+=== Network Policy Latency Testing
+
+Network policies can impact VM networking performance. Let's test network policy enforcement latency using kube-burner's network policy latency measurement.
+
+. Create network policy latency test configuration:
++
+[source,yaml,role=execute]
+----
+cd ~/kube-burner-configs
+
+cat << EOF > network-policy-latency-config.yml
+global:
+  measurements:
+    - name: netpolLatency
+
+metricsEndpoints:
+  - indexer:
+      type: local
+      metricsDirectory: collected-metrics-netpol
+
+jobs:
+  # Job 1: Create pods and namespaces
+  - name: network-policy-setup
+    jobType: create
+    jobIterations: 5
+    namespace: network-policy-perf
+    namespacedIterations: true
+    cleanup: false
+    podWait: true
+    waitWhenFinished: true
+    verifyObjects: true
+    errorOnVerify: false
+    namespaceLabels:
+      kube-burner.io/skip-networkpolicy-latency: "true"
+    objects:
+      - objectTemplate: network-test-pod.yml
+        replicas: 4
+        inputVars:
+          containerImage: registry.redhat.io/ubi8/ubi:latest
+
+  # Job 2: Apply network policies and test connectivity
+  - name: network-policy-test
+    jobType: create
+    jobIterations: 5
+    namespace: network-policy-perf
+    namespacedIterations: false
+    cleanup: false
+    podWait: false
+    waitWhenFinished: true
+    verifyObjects: true
+    errorOnVerify: false
+    jobPause: 1m
+    objects:
+      - objectTemplate: ingress-network-policy.yml
+        replicas: 2
+        inputVars:
+          namespaces: 5
+EOF
+----
+
+. Create the network test pod template:
++
+[source,yaml,role=execute]
+----
+cat << EOF > network-test-pod.yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: network-test-pod-{{.Iteration}}-{{.Replica}}
+  labels:
+    app: network-test
+    iteration: "{{.Iteration}}"
+    replica: "{{.Replica}}"
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker-rt: ""
+  containers:
+  - name: network-test-container
+    image: {{.containerImage}}
+    command: ["/bin/bash"]
+    args: ["-c", "dnf install -y httpd && echo 'Hello from pod {{.Iteration}}-{{.Replica}}' > /var/www/html/index.html && httpd -D FOREGROUND"]
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  restartPolicy: Never
+EOF
+----
+
+. Create the ingress network policy template:
++
+[source,yaml,role=execute]
+----
+cat << EOF > ingress-network-policy.yml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-{{.Iteration}}-{{.Replica}}
+spec:
+  podSelector:
+    matchLabels:
+      app: network-test
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: network-policy-perf-{{.Iteration}}
+    - podSelector:
+        matchLabels:
+          app: network-test
+    ports:
+    - protocol: TCP
+      port: 8080
+EOF
+----
+
+. Run the network policy latency test:
++
+[source,bash,role=execute]
+----
+# Execute the network policy latency test
+echo "🚀 Starting network policy latency test..."
+kube-burner init -c network-policy-latency-config.yml --log-level=info
+
+# This test will:
+# 1. Create pods in multiple namespaces
+# 2. Apply network policies
+# 3. Test connection establishment latency
+----
+
+. Monitor network policy test progress:
++
+[source,bash,role=execute]
+----
+# Watch network policies being created
+watch "oc get networkpolicy --all-namespaces | grep network-policy-perf"
+
+# Monitor pod connectivity
+oc get pods --all-namespaces | grep network-test
+----
+
+=== Analyzing Network Policy Latency Results
+
+. Analyze the network policy latency results:
++
+[source,bash,role=execute]
+----
+cd ~/kube-burner-configs
+
+# Check if network policy metrics were collected
+if [ -d "collected-metrics-netpol" ]; then
+    echo "✅ Network policy metrics collected successfully!"
+    echo ""
+
+    # View network policy latency quantiles
+    echo "=== Network Policy Latency Summary ==="
+    find collected-metrics-netpol/ -name "*netpolLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.quantileName != null) | "\(.quantileName): P99=\(.P99)ms, P95=\(.P95)ms, P50=\(.P50)ms, Avg=\(.avg)ms, Max=\(.max)ms"' | sort
+
+else
+    echo "❌ No network policy metrics directory found. Checking log output..."
+    LATEST_LOG=$(ls -t kube-burner-*.log | head -1)
+    echo "Latest log: $LATEST_LOG"
+    tail -20 $LATEST_LOG
+fi
+----
+
+== Performance Optimization Best Practices
+
+=== VM Configuration Best Practices
+
+. **CPU Optimization**:
+   - Use `dedicatedCpuPlacement: true` for guaranteed CPU access
+   - Match VM vCPU count to NUMA topology
+   - Use `host-passthrough` CPU model for maximum performance
+
+. **Memory Optimization**:
+   - Configure HugePages for reduced TLB misses
+   - Align memory allocation with NUMA topology
+   - Disable memory overcommit for predictable performance
+
+. **Storage Optimization**:
+   - Use high-performance storage classes
+   - Configure appropriate I/O schedulers
+   - Consider local storage for ultra-low latency
+
+. **Network Optimization**:
+   - Use SR-IOV for direct hardware access
+   - Configure multiple network interfaces for traffic separation
+   - Optimize network policies for minimal overhead
+
+=== Monitoring and Validation
+
+. **Key Metrics to Monitor**:
+   - VMI startup latency (target: < 45 seconds)
+   - Network policy enforcement latency (target: < 5 seconds)
+   - CPU utilization and isolation effectiveness
+   - Memory allocation and HugePages usage
+
+. **Performance Validation Tools**:
+   - kube-burner for comprehensive latency testing
+   - iperf3 for network throughput testing
+   - stress-ng for CPU and memory stress testing
+   - fio for storage performance testing
+
+== Module Summary
+
+This module covered low-latency virtualization with OpenShift Virtualization:
+
+* ✅ **Verified OpenShift Virtualization** deployment from Module 2
+* ✅ **Configured high-performance VMs** with dedicated CPUs and HugePages
+* ✅ **Measured VMI startup latency** using kube-burner's vmiLatency measurement
+* ✅ **Tested network policy performance** with netpolLatency measurement
+* ✅ **Compared VM vs container performance** to understand trade-offs
+* ✅ **Implemented SR-IOV networking** for ultra-low latency networking
+
+=== Key Performance Insights
+
+[cols="1,2,3"]
+|===
+| Metric | Typical Range | Optimization Target
+
+| **VMI Startup (P99)**
+| 30-60 seconds
+| < 45 seconds with tuning
+
+| **Network Policy Latency (P99)**
+| 2-10 seconds
+| < 5 seconds
+
+| **VM vs Pod Startup**
+| 5-10x slower
+| Acceptable for persistent workloads
+
+| **SR-IOV Network Latency**
+| < 100 microseconds
+| Hardware-dependent
+|===
+
+=== Workshop Progress
+
+* ✅ **Module 1**: Low-latency fundamentals
+* ✅ **Module 2**: RHACM and GitOps setup
+* ✅ **Module 3**: Baseline performance (5.4s pod startup)
+* ✅ **Module 4**: Performance tuning with CPU isolation
+* ✅ **Module 5**: Low-latency virtualization (current)
+* 🎯 **Next**: Module 6 - Monitoring and validation
+
+== Next Steps
+
+In Module 6, you'll learn to:
+* Set up comprehensive performance monitoring
+* Create alerting for performance regressions
+* Validate optimizations across the entire stack
+* Implement continuous performance testing
+
+== Knowledge Check
+
+. What are the key differences between VM and container startup latency?
+. How does SR-IOV improve network performance for VMs?
+. What network policy latency is acceptable for production workloads?
+. How do you configure a VM for maximum CPU performance?
+
+== Additional Resources
+
+* link:https://docs.openshift.com/container-platform/latest/virt/about-virt.html[OpenShift Virtualization Documentation^]
+* link:https://kube-burner.github.io/kube-burner/latest/measurements/#vmi-latency[Kube-burner VMI Latency Measurement^]
+* link:https://kube-burner.github.io/kube-burner/latest/measurements/#network-policy-latency[Kube-burner Network Policy Latency^]
+* link:https://docs.openshift.com/container-platform/latest/networking/hardware_networks/about-sriov.html[SR-IOV Network Operator Documentation^]

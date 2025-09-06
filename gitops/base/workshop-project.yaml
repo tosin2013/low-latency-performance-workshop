@@ -1,0 +1,98 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: low-latency-workshop
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/name: low-latency-workshop-project
+    app.kubernetes.io/part-of: low-latency-workshop
+spec:
+  description: Low Latency Performance Workshop Project
+  
+  # Source repositories
+  sourceRepos:
+  - 'https://github.com/tosin2013/low-latency-performance-workshop.git'
+  
+  # Destination clusters and namespaces
+  destinations:
+  - namespace: 'low-latency-*'
+    server: https://kubernetes.default.svc
+  - namespace: 'workshop-*'
+    server: https://kubernetes.default.svc
+  - namespace: 'openshift-*'
+    server: https://kubernetes.default.svc
+  - namespace: 'default'
+    server: https://kubernetes.default.svc
+  
+  # Cluster-scoped resources allowed
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  - group: 'performance.openshift.io'
+    kind: PerformanceProfile
+  - group: 'tuned.openshift.io'
+    kind: Tuned
+  - group: 'machineconfiguration.openshift.io'
+    kind: MachineConfig
+  - group: 'machineconfiguration.openshift.io'
+    kind: MachineConfigPool
+  - group: 'sriovnetwork.openshift.io'
+    kind: SriovNetworkNodePolicy
+  - group: 'k8s.cni.cncf.io'
+    kind: NetworkAttachmentDefinition
+  - group: 'kubevirt.io'
+    kind: KubeVirt
+  - group: 'cdi.kubevirt.io'
+    kind: CDI
+  - group: 'hco.kubevirt.io'
+    kind: HyperConverged
+  - group: 'monitoring.coreos.com'
+    kind: ServiceMonitor
+  - group: 'monitoring.coreos.com'
+    kind: PrometheusRule
+  - group: 'rbac.authorization.k8s.io'
+    kind: ClusterRole
+  - group: 'rbac.authorization.k8s.io'
+    kind: ClusterRoleBinding
+  - group: 'security.openshift.io'
+    kind: SecurityContextConstraints
+  
+  # Namespace-scoped resources allowed
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: '*'
+  - group: 'apps'
+    kind: '*'
+  - group: 'extensions'
+    kind: '*'
+  - group: 'networking.k8s.io'
+    kind: '*'
+  - group: 'rbac.authorization.k8s.io'
+    kind: '*'
+  - group: 'kubevirt.io'
+    kind: '*'
+  - group: 'cdi.kubevirt.io'
+    kind: '*'
+  - group: 'monitoring.coreos.com'
+    kind: '*'
+  - group: 'route.openshift.io'
+    kind: '*'
+  
+  # RBAC policies
+  roles:
+  - name: workshop-admin
+    description: Full access to workshop resources
+    policies:
+    - p, proj:low-latency-workshop:workshop-admin, applications, *, low-latency-workshop/*, allow
+    - p, proj:low-latency-workshop:workshop-admin, repositories, *, *, allow
+    groups:
+    - system:cluster-admins
+    - cluster-admins
+  
+  - name: workshop-user
+    description: Limited access for workshop participants
+    policies:
+    - p, proj:low-latency-workshop:workshop-user, applications, get, low-latency-workshop/*, allow
+    - p, proj:low-latency-workshop:workshop-user, applications, sync, low-latency-workshop/*, allow
+    - p, proj:low-latency-workshop:workshop-user, repositories, get, *, allow

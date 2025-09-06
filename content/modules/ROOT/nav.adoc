@@ -1,0 +1,41 @@
+* xref:index.adoc[Overview and Introduction]
+
+* xref:module-01-low-latency-intro.adoc[1. Low-Latency Performance Fundamentals]
+** xref:module-01-low-latency-intro.adoc#what-is-low-latency[What is Low-Latency?]
+** xref:module-01-low-latency-intro.adoc#openshift-performance-features[OpenShift Performance Features]
+** xref:module-01-low-latency-intro.adoc#workshop-architecture[Workshop Architecture]
+** xref:module-01-low-latency-intro.adoc#prerequisites[Prerequisites]
+
+* xref:module-02-rhacm-setup.adoc[2. RHACM and ArgoCD Integration Setup]
+** xref:module-02-rhacm-setup.adoc#prerequisites[Prerequisites]
+** xref:module-02-rhacm-setup.adoc#hands-on-exercise[Hands-on Exercise]
+** xref:module-02-rhacm-setup.adoc#verify-managed-clusters[Verify Managed Clusters]
+** xref:module-02-rhacm-setup.adoc#create-managedclusterset[Create ManagedClusterSet]
+** xref:module-02-rhacm-setup.adoc#deploy-integration[Deploy Integration]
+
+* xref:module-03-baseline-performance.adoc[3. Baseline Performance Testing]
+** xref:module-03-baseline-performance.adoc#introduction[Introduction]
+** xref:module-03-baseline-performance.adoc#install-kube-burner[Install Kube-burner]
+** xref:module-03-baseline-performance.adoc#run-baseline-tests[Run Baseline Tests]
+** xref:module-03-baseline-performance.adoc#analyze-results[Analyze Results]
+
+* xref:module-04-core-performance-tuning.adoc[4. Core Performance Tuning]
+** xref:module-04-core-performance-tuning.adoc#performance-profiles[Performance Profiles]
+** xref:module-04-core-performance-tuning.adoc#cpu-isolation[CPU Isolation]
+** xref:module-04-core-performance-tuning.adoc#hugepages[HugePages Configuration]
+** xref:module-04-core-performance-tuning.adoc#real-time-kernel[Real-time Kernel]
+
+* xref:module-05-low-latency-virtualization.adoc[5. Low-Latency Virtualization]
+** xref:module-05-low-latency-virtualization.adoc#openshift-virtualization[OpenShift Virtualization]
+** xref:module-05-low-latency-virtualization.adoc#vm-optimization[VM Optimization]
+** xref:module-05-low-latency-virtualization.adoc#sr-iov[SR-IOV Configuration]
+
+* xref:module-06-monitoring-validation.adoc[6. Monitoring and Validation]
+** xref:module-06-monitoring-validation.adoc#performance-monitoring[Performance Monitoring]
+** xref:module-06-monitoring-validation.adoc#validation-tools[Validation Tools]
+** xref:module-06-monitoring-validation.adoc#best-practices[Best Practices]
+
+* xref:module-07-case-study-conclusion.adoc[7. Case Study and Conclusion]
+** xref:module-07-case-study-conclusion.adoc#real-world-example[Real-world Example]
+** xref:module-07-case-study-conclusion.adoc#lessons-learned[Lessons Learned]
+** xref:module-07-case-study-conclusion.adoc#next-steps[Next Steps]

@@ -1,0 +1,109 @@
+---
+apiVersion: argoproj.io/v1beta1
+kind: ArgoCD
+metadata:
+  name: workshop-argocd
+  namespace: openshift-gitops
+spec:
+  # AWS-specific configuration
+  server:
+    # Additional AWS-specific annotations for load balancer
+    service:
+      type: ClusterIP
+    route:
+      enabled: true
+      annotations:
+        haproxy.router.openshift.io/timeout: 300s
+        haproxy.router.openshift.io/rate-limit-connections: "true"
+        haproxy.router.openshift.io/rate-limit-connections.concurrent-tcp: "100"
+        haproxy.router.openshift.io/rate-limit-connections.rate-http: "100"
+        haproxy.router.openshift.io/rate-limit-connections.rate-tcp: "100"
+      tls:
+        termination: reencrypt
+        insecureEdgeTerminationPolicy: Redirect
+    # AWS-specific resource adjustments
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+  
+  # Controller resources for AWS environment
+  controller:
+    resources:
+      limits:
+        cpu: 4000m
+        memory: 4Gi
+      requests:
+        cpu: 500m
+        memory: 2Gi
+    # AWS-specific environment variables
+    env:
+    - name: ARGOCD_CONTROLLER_REPLICAS
+      value: "1"
+    - name: ARGOCD_CONTROLLER_LOGFORMAT
+      value: "json"
+    - name: ARGOCD_CONTROLLER_LOGLEVEL
+      value: "info"
+  
+  # Repo server resources for AWS
+  repo:
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+    # AWS-specific volume mounts for performance
+    volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    volumes:
+    - name: tmp
+      emptyDir:
+        sizeLimit: 1Gi
+  
+  # Redis configuration for AWS
+  redis:
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 512Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+  
+  # ApplicationSet controller for AWS
+  applicationSet:
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  
+  # AWS-specific repository configuration
+  repositories: |
+    - type: git
+      url: https://github.com/tosin2013/low-latency-performance-workshop.git
+      name: workshop-repo
+
+  # AWS-specific project configuration
+  projects: |
+    - name: workshop-aws
+      description: Low Latency Performance Workshop - AWS Environment
+      sourceRepos:
+      - 'https://github.com/tosin2013/low-latency-performance-workshop.git'
+      destinations:
+      - namespace: '*'
+        server: https://kubernetes.default.svc
+      clusterResourceWhitelist:
+      - group: '*'
+        kind: '*'
+      namespaceResourceWhitelist:
+      - group: '*'
+        kind: '*'

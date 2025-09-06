@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# For SNO deployments, SR-IOV operator works the same as multi-node
+# Actual SR-IOV network policies will be configured in Module 5

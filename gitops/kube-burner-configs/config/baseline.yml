@@ -1,0 +1,29 @@
+global:
+  measurements:
+    - name: podLatency
+      thresholds:
+        - conditionType: Ready
+          metric: P99
+          threshold: 30000ms
+
+metricsEndpoints:
+  - indexer:
+      type: local
+      metricsDirectory: collected-metrics
+
+jobs:
+  - name: baseline-workload
+    jobType: create
+    jobIterations: 20
+    namespace: baseline-workload
+    namespacedIterations: true
+    cleanup: false
+    podWait: false
+    waitWhenFinished: true
+    verifyObjects: true
+    errorOnVerify: false
+    objects:
+      - objectTemplate: ../workloads/baseline-pod.yml
+        replicas: 5
+        inputVars:
+          containerImage: registry.redhat.io/ubi8/ubi:latest

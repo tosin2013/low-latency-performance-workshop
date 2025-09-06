@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: baseline-pod-{{.Iteration}}-{{.Replica}}
+  labels:
+    app: baseline-test
+    iteration: "{{.Iteration}}"
+spec:
+  containers:
+  - name: baseline-container
+    image: {{.containerImage}}
+    command: ["sleep"]
+    args: ["300"]
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  restartPolicy: Never

@@ -1,0 +1,215 @@
+= Module 1: Introduction to Low-Latency Computing and OpenShift
+
+[%hardbreaks]
+== Module Overview
+
+This module introduces the fundamentals of low-latency computing and demonstrates why OpenShift is an ideal platform for high-performance, time-sensitive workloads. You will learn about real-world use cases, performance characteristics, and the role of Kubernetes Operators in managing complex performance configurations.
+
+.*Learning Objectives*
+
+* Understand what low-latency means and why it matters for modern applications
+* Learn about real-world use cases requiring microsecond response times
+* Explore OpenShift's role in high-performance computing environments
+* Identify latency challenges in containerized environments
+* Introduction to Kubernetes Operators for performance management
+
+.*Workshop Prerequisites*
+
+This workshop requires:
+
+* Access to a hub cluster with RHACM installed (covered in Module 2)
+* A target cluster that will be imported into RHACM (Single Node OpenShift recommended)
+* Basic understanding of OpenShift and Kubernetes concepts
+
+== What is Low-Latency and Why Does it Matter?
+
+.*Definition*
+Latency, or response time, is the time between an event and the system's response, typically measured in microseconds (µs). Low-latency computing focuses on achieving predictable, minimal response times for time-sensitive applications.
+
+.*Importance*
+Many industries and organizations, especially in finance and telecommunications, require extremely high performance computing with low and predictable latency. Even small delays can result in:
+
+* Lost trading opportunities worth millions of dollars
+* Degraded user experience in real-time applications
+* Violation of Service Level Agreements (SLAs)
+* Competitive disadvantage in time-sensitive markets
+
+.*Key Use Cases*
+
+* *Financial Trading*: High-frequency trading platforms requiring microsecond response times
+* *Telecommunications*: Real-time voice and video processing with strict latency budgets
+* *Gaming*: Online gaming platforms where milliseconds determine user experience
+* *Industrial IoT*: Real-time control systems and automation requiring deterministic responses
+* *Live Streaming*: Media processing and delivery with minimal delay
+* *Autonomous Vehicles*: Safety-critical systems requiring immediate response to sensor data
+
+== OpenShift's Role in High-Performance Computing
+
+.*Capability Overview*
+Exchanges, banks, hedge funds, and financial intermediaries can run high-throughput/low-latency trading on OpenShift with performance characteristics similar to Red Hat Enterprise Linux (RHEL). This enables organizations to containerize their most demanding workloads without sacrificing performance.
+
+.*Performance Metrics*
+Real-world benchmarks demonstrate OpenShift's capability:
+
+* *At 100,000 messages/second*: RHEL and OpenShift exhibit nearly identical 99th percentile latency (2 µsec vs. 2.3 µsec)
+* *At 1,400,000 messages/second*: OpenShift's 99th percentile latency was 2.8 µsec
+* *Production deployments*: Tier 1 banks achieving 16x transaction capacity increase over legacy platforms
+
+.*Enterprise Benefits*
+OpenShift enables organizations to achieve high performance while providing:
+
+* *Improved Manageability*: Kubernetes-native orchestration and automation
+* *Lower Total Cost of Ownership (TCO)*: Reduced operational overhead compared to traditional infrastructure
+* *Improved Developer Productivity*: Container-based development and deployment workflows
+* *Reduced Application Downtime*: Built-in high availability and automated recovery
+* *More Efficient DevOps*: GitOps workflows and automated operations
+* *Improved Security Posture*: Immutable CoreOS foundation and integrated security controls
+
+== Latency Challenges in Containerized Environments
+
+Understanding the sources of latency is crucial for effective optimization. OpenShift helps mitigate several key challenges:
+
+.*Common Sources of Latency*
+* *Control-plane Overhead*: Kubernetes API server and scheduler delays
+* *Kernel Jitter*: Context switches, interrupts, and memory management overhead
+* *Container Runtime Path*: CRI-O, overlay filesystems, and namespace overhead
+* *Network CNI Overhead*: Software-defined networking latency
+* *Resource Contention*: CPU, memory, and I/O competition between workloads
+
+.*OpenShift Solutions*
+* *Node Tuning Operator*: Automated system-level optimizations via TuneD profiles
+* *Performance Profile Controller*: Comprehensive CPU isolation and memory tuning
+* *Real-time Kernel Support*: Deterministic scheduling and reduced jitter
+* *SR-IOV Network Operator*: Hardware-accelerated networking with direct device access
+* *NUMA Awareness*: Memory locality optimization for multi-socket systems
+* *Machine Config Operator*: Declarative node-level configuration management
+
+== Introduction to Kubernetes Operators
+
+.*What Are Kubernetes Operators?*
+A Kubernetes Operator is a method of packaging, deploying, and managing a Kubernetes-native application. They are essentially custom controllers that continuously reconcile the desired state and the current state of an object.
+
+.*Key Characteristics*
+* *Custom Resource Definitions (CRDs)*: Extend Kubernetes API with domain-specific objects
+* *Controllers*: Monitor and maintain desired state automatically
+* *Domain-Specific Knowledge*: Encode operational knowledge for specific applications
+* *Lifecycle Management*: Handle installation, updates, configuration changes, and scaling
+
+.*Relevance to Performance Tuning*
+OpenShift performance tuning features are managed through various Operators. **Important**: Starting with OpenShift 4.11, the performance operator architecture has been significantly updated. This workshop targets **OpenShift 4.19**, which fully implements the modernized architecture:
+
+[cols="1,3,1"]
+|===
+| Operator | Purpose | Status (4.19)
+
+| *Node Tuning Operator (NTO)*
+| Manages TuneD daemon AND Performance Profiles. Since OpenShift 4.11+, this operator has absorbed the functionality of the deprecated Performance Addon Operator
+| Built-in ✅
+
+| *Performance Addon Operator (PAO)*
+| Previously managed Performance Profiles for CPU isolation, real-time kernels, and HugePages
+| **DEPRECATED** ❌
+
+| *Machine Config Operator (MCO)*
+| Manages configuration changes and orchestrates updates across the cluster, crucial for performance-related configurations
+| Built-in ✅
+
+| *SR-IOV Network Operator*
+| Manages Single-Root I/O Virtualization for high-performance networking with direct hardware access
+| Requires Installation 📦
+
+| *OpenShift Virtualization Operator*
+| Provides KubeVirt virtualization capabilities for running VMs with low-latency characteristics
+| Requires Installation 📦
+|===
+
+.*Critical Architecture Changes in OpenShift 4.11+ (Including 4.19)*
+
+[NOTE]
+====
+**Performance Addon Operator Deprecation**: As of OpenShift 4.11, the Performance Addon Operator has been deprecated and its functionality has been integrated into the Node Tuning Operator. **OpenShift 4.19** (our target version) fully implements this modernized architecture:
+
+* **Performance Profiles** are now managed directly by the Node Tuning Operator
+* **No separate installation** required for performance profile functionality
+* **Simplified deployment** with fewer operators to manage
+* **Better integration** between system tuning and performance profiles
+* **Mature implementation** with enhanced stability and features
+
+Reference: https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.19 Low Latency Tuning Documentation^]
+====
+
+.*Benefits of Operator-Based Management*
+* *Declarative Configuration*: Define desired state, operator ensures implementation
+* *Automated Operations*: Operators handle complex configuration and lifecycle tasks
+* *Consistency*: Standardized deployment and management across environments
+* *Version Control*: Configuration as code for auditability and reproducibility
+
+== Real-World Case Study Preview
+
+.*Tier 1 Bank Transformation*
+A major financial institution successfully modernized their trading platform using OpenShift:
+
+* *Time to Market*: Reduced functional enhancement delivery from 2-3 months to a few days
+* *Operational Efficiency*: Significant reduction in OpEx for colocation versus legacy "snowflake" servers
+* *Performance Gains*: 16x increase in daily transaction capacity
+* *Infrastructure Optimization*: Achieved high-density deployment with up to 10x less rack space
+
+This demonstrates that with proper tuning, OpenShift can deliver bare-metal performance characteristics while providing the benefits of container orchestration.
+
+== Module Summary
+
+In this module, you have:
+
+✅ *Learned* the fundamentals of low-latency computing and its critical importance +
+✅ *Understood* real-world use cases requiring microsecond response times +
+✅ *Explored* OpenShift's capabilities for high-performance workloads +
+✅ *Identified* the sources of latency in containerized environments +
+✅ *Discovered* how Kubernetes Operators automate performance management +
+✅ *Updated Knowledge* of OpenShift 4.19 performance operator architecture changes
+
+.*Key Takeaways*
+* Low-latency computing is essential for financial, telecom, and real-time applications
+* OpenShift can achieve bare-metal performance characteristics with proper tuning
+* **OpenShift 4.19** has a mature, simplified performance operator architecture
+* **Node Tuning Operator** now handles both TuneD profiles and Performance Profiles
+* **Performance Addon Operator** is deprecated - its functionality is now built-in
+* Kubernetes Operators enable declarative, automated performance management
+
+== External References
+
+.*OpenShift 4.19 Performance Documentation*
+* https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.19 Low Latency Tuning Guide^] - Official documentation for current performance tuning
+* https://docs.openshift.io/container-platform/4.19/scalability_and_performance/what-huge-pages-do-and-how-they-are-consumed-by-apps.html[HugePages Configuration^] - Memory optimization guide
+* https://docs.openshift.io/container-platform/4.19/networking/hardware_networks/about-sriov.html[SR-IOV Networking^] - High-performance networking documentation
+
+.*Performance Operator Architecture (4.19)*
+* https://docs.openshift.io/container-platform/4.19/nodes/nodes/nodes-node-tuning-operator.html[Node Tuning Operator^] - Built-in performance management
+* https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-creating-performance-profiles.html[Creating Performance Profiles^] - CPU isolation and real-time configuration
+* https://github.com/openshift/cluster-node-tuning-operator[Node Tuning Operator Source^] - GitHub repository
+
+.*Real-World Case Studies*
+* https://www.redhat.com/en/blog/how-achieve-rhel-level-performance-openshift[Achieving RHEL-Level Performance on OpenShift^] - Performance benchmarking
+* https://www.redhat.com/en/blog/real-time-openshift-container-native-virtualization[Real-Time OpenShift with CNV^] - Low-latency virtualization
+* https://www.redhat.com/en/resources/financial-services-openshift-case-study[Financial Services Case Study^] - Tier 1 bank transformation
+
+.*Technical Deep Dives*
+* https://www.redhat.com/en/blog/understanding-rhel-real-time-kernel[Understanding Real-Time Kernels^] - Kernel optimization concepts
+* https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux_for_real_time/9[RHEL Real Time Documentation^] - Real-time system tuning
+* https://www.redhat.com/en/blog/cpu-isolation-introduction[CPU Isolation Introduction^] - CPU management fundamentals
+
+== Next Steps
+
+In Module 2, you will set up the workshop environment using Red Hat Advanced Cluster Management (RHACM) to safely manage your target cluster where all performance tuning will be applied. This multi-cluster approach ensures that experimental configurations don't impact your primary workshop environment.
+
+Ready to start? Begin with Module 1 to understand the fundamentals, then progress through hands-on exercises that build upon each other.
+
+.*Learning Path:*
+1. **Start Here**: Module 1 - Low-Latency Fundamentals
+2. **Multi-Cluster Setup**: Module 2 - RHACM & ArgoCD Integration  
+3. **Performance Baseline**: Module 3 - Baseline Testing
+4. **Core Optimization**: Module 4 - Performance Tuning
+
+.*Additional Resources:*
+* https://docs.openshift.io/container-platform/4.19/scalability_and_performance/[OpenShift Performance Documentation^]
+* https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes[RHACM Documentation^]
+* https://github.com/cloud-bulldozer/kube-burner[Kube-burner Performance Testing^]

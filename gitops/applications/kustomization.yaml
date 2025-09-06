@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: workshop-applications
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+resources:
+  - operators/
+  - performance-profiles/
+  - sample-workloads/
+
+labels:
+- pairs:
+    app.kubernetes.io/part-of: low-latency-workshop
+    app.kubernetes.io/managed-by: kustomize

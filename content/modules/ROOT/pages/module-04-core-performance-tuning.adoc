@@ -1,0 +1,496 @@
+= Module 3: Core Performance Tuning with Performance Profiles
+
+[%hardbreaks]
+== Module Overview
+
+This module is the heart of the workshop, where you'll apply node-level performance tuning using OpenShift's Performance Profile Controller. You'll configure CPU isolation, HugePages allocation, and real-time kernel settings to dramatically improve latency characteristics.
+
+.*Learning Objectives*
+
+* Understand Performance Profiles and their components
+* Configure CPU isolation for high-performance workloads
+* Allocate and manage HugePages for reduced memory latency
+* Apply real-time kernel tuning profiles
+* Measure the performance improvements from your optimizations
+
+.*Prerequisites*
+
+Before starting this module, ensure you have completed:
+
+* Module 1: Workshop Setup and Multi-Cluster Management
+* Module 2: Low-Latency Fundamentals and Baseline Performance
+* Established baseline performance metrics using kube-burner
+
+== Understanding Performance Profiles
+
+The Performance Profile Controller (PPC) is integrated into the Node Tuning Operator and provides a declarative way to configure multiple low-latency optimizations through a single custom resource.
+
+.*Key Components*
+* *CPU Management*: Isolate specific CPUs for high-performance workloads
+* *Memory Tuning*: Configure HugePages and memory-related kernel parameters  
+* *Kernel Tuning*: Apply real-time kernel settings and tuned profiles
+* *NUMA Awareness*: Optimize for Non-Uniform Memory Access architectures
+
+.*Performance Profile Benefits*
+* *Single Configuration*: One CR manages multiple complex tuning parameters
+* *Declarative*: Version-controlled, repeatable configuration
+* *Node Pool Isolation*: Apply tuning to specific worker nodes only
+* *Rolling Updates*: Orchestrated updates with minimal disruption
+
+== Hands-on Exercise: Creating a Performance Profile
+
+=== Step 1: Identify Target Nodes
+
+First, we'll identify and label the nodes in your target cluster that will receive performance tuning.
+
+. Switch to your target cluster context:
++
+[source,bash,role=execute]
+----
+oc config use-context target-cluster
+----
+
+. List available worker nodes:
++
+[source,bash,role=execute]
+----
+oc get nodes -l node-role.kubernetes.io/worker=
+----
+
+. Check node resources and CPU topology:
++
+[source,bash,role=execute]
+----
+# Get detailed node information
+oc describe node $(oc get nodes -l node-role.kubernetes.io/worker= -o jsonpath='{.items[0].metadata.name}')
+
+# Check CPU information
+oc debug node/$(oc get nodes -l node-role.kubernetes.io/worker= -o jsonpath='{.items[0].metadata.name}') -- chroot /host lscpu
+----
+
+. Label nodes for performance tuning:
++
+[source,bash,role=execute]
+----
+# Label the worker node(s) for performance tuning
+oc label node $(oc get nodes -l node-role.kubernetes.io/worker= -o jsonpath='{.items[0].metadata.name}') node-role.kubernetes.io/worker-rt=
+
+# Verify the label
+oc get nodes --show-labels | grep worker-rt
+----
+
+=== Step 2: Create a Machine Config Pool
+
+Create a dedicated Machine Config Pool for performance-tuned nodes to isolate the configuration changes.
+
+. Create the performance Machine Config Pool:
++
+[source,bash,role=execute]
+----
+cat << 'EOF' | oc apply -f -
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: worker-rt
+  labels:
+    machineconfiguration.openshift.io/role: worker-rt
+spec:
+  machineConfigSelector:
+    matchExpressions:
+    - {key: machineconfiguration.openshift.io/role, operator: In, values: [worker, worker-rt]}
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker-rt: ""
+  paused: false
+EOF
+----
+
+. Verify the Machine Config Pool:
++
+[source,bash,role=execute]
+----
+oc get mcp worker-rt
+----
+
+=== Step 3: Create the Performance Profile
+
+Now we'll create a Performance Profile that configures CPU isolation, HugePages, and real-time kernel settings.
+
+. First, determine the optimal CPU allocation based on your node:
++
+[source,bash,role=execute]
+----
+# Get the number of CPUs available
+NODE_NAME=$(oc get nodes -l node-role.kubernetes.io/worker-rt= -o jsonpath='{.items[0].metadata.name}')
+CPU_COUNT=$(oc debug node/$NODE_NAME -- chroot /host nproc)
+echo "Total CPUs available: $CPU_COUNT"
+
+# Calculate CPU allocation (reserve first 2 CPUs for system, isolate the rest)
+if [ $CPU_COUNT -gt 4 ]; then
+    RESERVED_CPUS="0-1"
+    ISOLATED_CPUS="2-$((CPU_COUNT-1))"
+else
+    RESERVED_CPUS="0"
+    ISOLATED_CPUS="1-$((CPU_COUNT-1))"
+fi
+
+echo "Reserved CPUs: $RESERVED_CPUS"
+echo "Isolated CPUs: $ISOLATED_CPUS"
+----
+
+. Create the Performance Profile:
++
+[source,bash,role=execute]
+----
+cat << EOF | oc apply -f -
+apiVersion: performance.openshift.io/v2
+kind: PerformanceProfile
+metadata:
+  name: low-latency-profile
+spec:
+  cpu:
+    isolated: "$ISOLATED_CPUS"
+    reserved: "$RESERVED_CPUS"
+  hugepages:
+    defaultHugepagesSize: 1G
+    pages:
+    - count: 2
+      size: 1G
+  nodeSelector:
+    node-role.kubernetes.io/worker-rt: ""
+  numa:
+    topologyPolicy: "single-numa-node"
+  realTimeKernel:
+    enabled: true
+  additionalKernelArgs:
+  - "nosmt"
+  - "nohz_full=$ISOLATED_CPUS"
+  - "rcu_nocbs=$ISOLATED_CPUS"
+EOF
+----
+
+. Verify the Performance Profile was created:
++
+[source,bash,role=execute]
+----
+oc get performanceprofile low-latency-profile -o yaml
+----
+
+=== Step 4: Monitor the Performance Profile Application
+
+The Performance Profile will trigger a rolling update of your worker nodes. This process includes installing the real-time kernel and applying all the specified optimizations.
+
+. Monitor the Machine Config Pool status:
++
+[source,bash,role=execute]
+----
+# Watch the worker-rt pool during updates
+watch "oc get mcp worker-rt"
+----
+
+. Monitor node updates in detail:
++
+[source,bash,role=execute]
+----
+# Check the machine config daemon status
+oc get pods -n openshift-machine-config-operator | grep daemon
+
+# Watch node events
+oc get events --sort-by='.lastTimestamp' | grep $NODE_NAME
+----
+
+. Wait for the update to complete:
++
+[source,bash,role=execute]
+----
+# Wait for the machine config pool to be ready
+oc wait --for=condition=Updated mcp/worker-rt --timeout=1200s
+
+# Verify the node is ready after reboot
+oc wait --for=condition=Ready node/$NODE_NAME --timeout=300s
+----
+
+=== Step 5: Verify Performance Profile Effects
+
+Once the update is complete, verify that all the performance optimizations have been applied.
+
+. Check the real-time kernel:
++
+[source,bash,role=execute]
+----
+oc debug node/$NODE_NAME -- chroot /host uname -a | grep rt
+----
+
+. Verify CPU isolation:
++
+[source,bash,role=execute]
+----
+# Check isolated CPUs
+oc debug node/$NODE_NAME -- chroot /host cat /sys/devices/system/cpu/isolated
+
+# Check CPU governor settings
+oc debug node/$NODE_NAME -- chroot /host cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | sort | uniq -c
+----
+
+. Verify HugePages allocation:
++
+[source,bash,role=execute]
+----
+# Check HugePages configuration
+oc debug node/$NODE_NAME -- chroot /host cat /proc/meminfo | grep -i huge
+
+# Check HugePages availability in Kubernetes
+oc describe node $NODE_NAME | grep -A 5 -B 5 hugepages
+----
+
+. Check tuned profile application:
++
+[source,bash,role=execute]
+----
+# Verify the tuned daemon is running the correct profile
+oc debug node/$NODE_NAME -- chroot /host tuned-adm active
+----
+
+== Performance Testing: Measuring Improvements
+
+Now let's run the same baseline test to measure the performance improvements from our optimizations.
+
+=== Step 6: Re-run Performance Tests
+
+. Re-run the kube-burner baseline test on the optimized cluster:
++
+[source,bash,role=execute]
+----
+cd ~/kube-burner-configs
+
+# Create a new test configuration for the tuned cluster
+cat > tuned-config.yml << 'EOF'
+global:
+  measurements:
+    - name: podLatency
+      thresholds:
+        - conditionType: Ready
+          metric: P99
+          threshold: 15000ms  # Expect better performance after tuning
+
+metricsEndpoints:
+  - indexer:
+      type: local
+      metricsDirectory: collected-metrics-tuned
+
+jobs:
+  - name: tuned-workload
+    jobType: create
+    jobIterations: 20
+    namespace: tuned-workload
+    namespacedIterations: true
+    cleanup: false
+    podWait: false
+    waitWhenFinished: true
+    verifyObjects: true
+    errorOnVerify: false
+    objects:
+      - objectTemplate: tuned-pod.yml
+        replicas: 5
+        inputVars:
+          containerImage: registry.redhat.io/ubi8/ubi:latest
+EOF
+
+# Create a tuned pod template that can be scheduled on isolated CPUs
+cat > tuned-pod.yml << 'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tuned-pod-{{.Iteration}}-{{.Replica}}
+  labels:
+    app: tuned-test
+    iteration: "{{.Iteration}}"
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker-rt: ""
+  containers:
+  - name: tuned-container
+    image: {{.containerImage}}
+    command: ["sleep"]
+    args: ["300"]
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "100m"
+      limits:
+        memory: "128Mi"
+        cpu: "200m"
+  restartPolicy: Never
+EOF
+
+# Run the performance test
+kube-burner init -c tuned-config.yml --log-level=info
+----
+
+. Analyze the tuned performance results:
++
+[source,bash,role=execute]
+----
+# Analyze the tuned test results using modern approach
+cd ~/kube-burner-configs
+
+# Check if tuned metrics were collected successfully
+if [ -d "collected-metrics-tuned" ]; then
+    echo "✅ Tuned metrics collected successfully!"
+    echo ""
+
+    # View the tuned pod latency quantiles
+    echo "=== Tuned Pod Latency Summary ==="
+    find collected-metrics-tuned/ -name "*podLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.quantileName != null) | "\(.quantileName): P99=\(.P99)ms, P95=\(.P95)ms, P50=\(.P50)ms, Avg=\(.avg)ms, Max=\(.max)ms"' | sort
+    echo ""
+else
+    echo "❌ No tuned metrics directory found. Checking log output..."
+    LATEST_LOG=$(ls -t kube-burner-*.log | head -1)
+    echo "Latest log: $LATEST_LOG"
+    grep -E "(Ready|PodScheduled|ContainersReady|Initialized).*99th.*max.*avg" $LATEST_LOG || echo "No latency metrics found in log"
+fi
+----
+
+. Compare results with your baseline:
++
+[source,bash,role=execute]
+----
+# Create comprehensive performance comparison report
+cd ~/kube-burner-configs
+
+# Extract baseline metrics
+BASELINE_READY_AVG=$(cat collected-metrics/podLatencyQuantilesMeasurement-baseline-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .avg' 2>/dev/null || echo "N/A")
+BASELINE_READY_P99=$(cat collected-metrics/podLatencyQuantilesMeasurement-baseline-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .P99' 2>/dev/null || echo "N/A")
+
+# Extract tuned metrics
+TUNED_READY_AVG=$(cat collected-metrics-tuned/podLatencyQuantilesMeasurement-tuned-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .avg' 2>/dev/null || echo "N/A")
+TUNED_READY_P99=$(cat collected-metrics-tuned/podLatencyQuantilesMeasurement-tuned-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .P99' 2>/dev/null || echo "N/A")
+
+# Create comparison report
+cat > performance-comparison-$(date +%Y%m%d).md << EOF
+# Performance Comparison Report - $(date)
+
+## Test Configuration
+- **Baseline Test**: Standard pods on default worker nodes
+- **Tuned Test**: Pods scheduled on performance-tuned worker-rt nodes
+- **Performance Profile**: low-latency-profile applied
+
+## Results Comparison
+
+### Pod Ready Latency
+| Metric | Baseline | Tuned | Improvement |
+|--------|----------|-------|-------------|
+| **Average** | ${BASELINE_READY_AVG}ms | ${TUNED_READY_AVG}ms | $(if [ "$BASELINE_READY_AVG" != "N/A" ] && [ "$TUNED_READY_AVG" != "N/A" ]; then echo "scale=1; ($BASELINE_READY_AVG - $TUNED_READY_AVG) * 100 / $BASELINE_READY_AVG" | bc 2>/dev/null | sed 's/$/% faster/' || echo "TBD"; else echo "TBD"; fi) |
+| **P99** | ${BASELINE_READY_P99}ms | ${TUNED_READY_P99}ms | $(if [ "$BASELINE_READY_P99" != "N/A" ] && [ "$TUNED_READY_P99" != "N/A" ]; then echo "scale=1; ($BASELINE_READY_P99 - $TUNED_READY_P99) * 100 / $BASELINE_READY_P99" | bc 2>/dev/null | sed 's/$/% faster/' || echo "TBD"; else echo "TBD"; fi) |
+
+## Performance Optimizations Applied
+- ✅ **CPU Isolation**: Dedicated CPUs for workloads
+- ✅ **HugePages**: Reduced memory latency
+- ✅ **Real-time Kernel**: Deterministic scheduling
+- ✅ **Node Selector**: Workloads on tuned nodes
+
+## Key Insights
+EOF
+
+# Add insights based on results
+if [ "$BASELINE_READY_AVG" != "N/A" ] && [ "$TUNED_READY_AVG" != "N/A" ]; then
+    if [ "$TUNED_READY_AVG" -lt "$BASELINE_READY_AVG" ]; then
+        echo "- ✅ **Performance Improved**: Tuned configuration shows better latency" >> performance-comparison-$(date +%Y%m%d).md
+    else
+        echo "- ⚠️ **Performance Similar**: Results may vary based on cluster load and hardware" >> performance-comparison-$(date +%Y%m%d).md
+    fi
+else
+    echo "- 📊 **Analysis Pending**: Complete both tests to see comparison" >> performance-comparison-$(date +%Y%m%d).md
+fi
+
+echo "- 🎯 **Next Steps**: Use these optimized settings for production workloads" >> performance-comparison-$(date +%Y%m%d).md
+
+# Display the report
+echo "📊 Performance Comparison Report:"
+echo "=================================="
+cat performance-comparison-$(date +%Y%m%d).md
+
+echo "BASELINE RESULTS:" >> ~/performance-comparison.txt
+cat ~/baseline-results.txt | grep -A 10 "Pod Creation Latency" >> ~/performance-comparison.txt
+
+echo "" >> ~/performance-comparison.txt
+echo "AFTER TUNING RESULTS:" >> ~/performance-comparison.txt
+
+# Extract metrics from new test
+if [ -f collected-metrics/podLatency*.json ]; then
+    cat collected-metrics/podLatency*.json | jq -r '.[] | select(.quantileName != null) | "\(.quantileName): \(.value)ms"' >> ~/performance-comparison.txt
+fi
+
+cat ~/performance-comparison.txt
+----
+
+=== Expected Improvements
+
+With proper performance tuning, you should see significant improvements:
+
+.*Typical Improvements*
+* *Pod Creation P99*: 50-70% reduction in latency
+* *Pod Creation P95*: 40-60% reduction in latency  
+* *Consistency*: Much lower variance between P50 and P99
+* *Jitter Reduction*: More predictable response times
+
+.*Performance Factors*
+* *CPU Isolation*: Eliminates interference from system processes
+* *Real-time Kernel*: Provides deterministic scheduling
+* *HugePages*: Reduces memory management overhead
+* *NUMA Optimization*: Ensures local memory access
+
+== Troubleshooting Common Issues
+
+.*Node Not Updating*
+If the worker node doesn't start updating:
+[source,bash]
+----
+# Check machine config pool status
+oc describe mcp worker-rt
+
+# Check for conflicting machine configs
+oc get mc | grep worker-rt
+----
+
+.*Real-time Kernel Issues*
+If the RT kernel fails to install:
+[source,bash]
+----
+# Check node events for errors
+oc get events --sort-by='.lastTimestamp' | grep $NODE_NAME
+
+# Verify RT kernel packages are available
+oc debug node/$NODE_NAME -- chroot /host yum list kernel-rt
+----
+
+.*HugePages Not Allocated*
+If HugePages aren't configured correctly:
+[source,bash]
+----
+# Check if sufficient memory is available
+oc debug node/$NODE_NAME -- chroot /host free -h
+
+# Verify HugePages mount points
+oc debug node/$NODE_NAME -- chroot /host mount | grep huge
+----
+
+== Module Summary
+
+In this module, you have:
+
+✅ *Created* a Performance Profile for comprehensive low-latency tuning +
+✅ *Configured* CPU isolation to dedicate cores for high-performance workloads +
+✅ *Allocated* HugePages to reduce memory management overhead +
+✅ *Applied* real-time kernel settings for deterministic scheduling +
+✅ *Measured* significant performance improvements through testing
+
+.*Key Takeaways*
+* Performance Profiles provide declarative, comprehensive tuning
+* CPU isolation eliminates interference from system processes  
+* Real-time kernels provide predictable, low-latency scheduling
+* HugePages reduce memory management overhead for large allocations
+* Proper tuning can achieve 50-70% latency improvements
+
+.*Next Steps*
+In Module 4, you will learn how to apply these performance optimizations to OpenShift Virtualization, creating high-performance virtual machines that can achieve near bare-metal latency characteristics.

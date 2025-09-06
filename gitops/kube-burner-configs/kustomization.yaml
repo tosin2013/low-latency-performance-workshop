@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: kube-burner-configs
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# These are configuration files, not Kubernetes resources
+# They are managed as part of the GitOps repository structure
+# but not applied directly to the cluster
+
+resources: []
+
+# Configuration files for reference
+configMapGenerator:
+- name: kube-burner-baseline-config
+  files:
+  - config/baseline.yml
+- name: kube-burner-tuned-pod-config
+  files:
+  - config/tuned-pod.yml
+- name: kube-burner-tuned-vmi-config
+  files:
+  - config/tuned-vmi.yml
+- name: kube-burner-workload-templates
+  files:
+  - workloads/baseline-pod.yml
+  - workloads/tuned-pod.yml
+  - workloads/tuned-vmi.yml
+
+labels:
+- pairs:
+    app.kubernetes.io/name: kube-burner-configs
+    app.kubernetes.io/part-of: low-latency-workshop
+    app.kubernetes.io/component: performance-testing

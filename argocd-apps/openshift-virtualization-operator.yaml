@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openshift-virtualization-operator
+  namespace: openshift-gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tosin2013/low-latency-performance-workshop.git
+    targetRevision: HEAD
+    path: gitops/openshift-virtualization/operator/overlays/sno
+  destination:
+    server: https://api.cluster-tln8k.dynamic.redhatworkshops.io:6443
+    namespace: openshift-cnv
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
