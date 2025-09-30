@@ -12,7 +12,7 @@ spec:
     targetRevision: HEAD
     path: gitops/openshift-virtualization/operator/overlays/sno
   destination:
-    server: https://api.cluster-tln8k.dynamic.redhatworkshops.io:6443
+    server: https://api.cluster-gsq4q.dynamic.redhatworkshops.io:6443
     namespace: openshift-cnv
   syncPolicy:
     automated:
