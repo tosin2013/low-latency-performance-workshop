@@ -114,6 +114,13 @@ local-cluster   true           https://api.cluster-w4hmn.w4hmn.sandbox5146.opent
 oc get managedclusters -o wide
 ----
 
+. Set the target cluster name as an environment variable:
++
+[source,bash,role=execute]
+----
+export cluster=cluster-tln8k 
+----
+
 === Step 2: Using the Provided RHACM-ArgoCD Integration
 
 The workshop repository includes pre-configured resources for RHACM-ArgoCD integration. Let's use these to quickly set up the multi-cluster environment.
@@ -195,6 +202,80 @@ cd /home/ec2-user/low-latency-performance-workshop/argocd-apps
 ls -la
 cat README.md
 ----
+
+. **Update destination server URLs for your cluster**:
++
+[IMPORTANT]
+====
+The ArgoCD application files contain hardcoded destination server URLs that must be updated to match your current cluster's API server URL before deployment.
+====
++
+First, get your cluster's API server URL:
++
+[source,bash,role=execute]
+----
+# Get your cluster's API server URL
+oc login -u kubeadmin -p <password> https://api.cluster-xxxx.dynamic.redhatworkshops.io:6443
+CLUSTER_API_URL=$(oc whoami --show-server)
+echo "Current cluster API URL: $CLUSTER_API_URL"
+----
++
+Then update all ArgoCD application files with your cluster's API server URL using `yq`:
++
+[source,bash,role=execute]
+----
+# Update the destination server in all ArgoCD application files using yq
+for file in sriov-network-operator.yaml openshift-virtualization-operator.yaml openshift-virtualization-instance.yaml; do
+  echo "Updating $file..."
+  yq eval ".spec.destination.server = \"$CLUSTER_API_URL\"" -i "$file"
+done
+
+# Verify the changes
+echo "Updated server URLs in ArgoCD applications:"
+for file in *.yaml; do
+  if [[ "$file" != "kustomization.yaml" ]]; then
+    echo "$file: $(yq eval '.spec.destination.server' "$file")"
+  fi
+done
+----
++
+[NOTE]
+====
+**Why this step is necessary:**
+
+Each ArgoCD application defines a `destination.server` field that specifies where the application should be deployed. The workshop files contain example URLs that need to be updated to match your specific cluster's API server endpoint.
+
+**What the yq command does:**
+- Uses `yq` (YAML processor) to safely update YAML files
+- Sets the `.spec.destination.server` field to your cluster's API URL
+- Maintains proper YAML formatting and structure
+- Processes each ArgoCD application file individually
+
+**Files that will be updated:**
+- `sriov-network-operator.yaml`
+- `openshift-virtualization-operator.yaml`
+- `openshift-virtualization-instance.yaml`
+
+**Why yq is better than sed:**
+- Preserves YAML structure and formatting
+- Handles YAML-specific syntax correctly
+- Safer for complex YAML manipulations
+- More readable and maintainable
+====
+
+. Commit and push the changes to your Git repository:
++
+[source,bash,role=execute]
+----
+# Add the updated files to git
+git add *.yaml
+
+# Commit the changes
+git commit -m "Update ArgoCD application destination servers for current cluster"
+
+# Push to your repository
+git push origin main
+----
 +
 [NOTE]
 ====
@@ -212,7 +293,41 @@ This means the workshop only needs to install **SR-IOV Network Operator** and **
 For more details, see: https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.19 Low Latency Tuning Documentation^]
 ====
 
-=== Step 4: Understanding the Performance Operator Architecture
+=== Step 4: Return to Hub Cluster
+
+Before deploying the ArgoCD applications, ensure you're logged into the **hub cluster** where ArgoCD is running:
+
+. Log back into the hub cluster:
++
+[source,bash,role=execute]
+----
+# Log into the hub cluster (replace with your hub cluster details)
+oc login -u kubeadmin -p <hub-cluster-password> https://api.cluster-xxxx.dynamic.redhatworkshops.io:6443
+----
+
+. Verify you're on the hub cluster and ArgoCD is running:
++
+[source,bash,role=execute]
+----
+# Check current cluster context
+oc whoami --show-server
+
+# Verify ArgoCD is running on the hub cluster
+oc get pods -n openshift-gitops
+----
++
+You should see ArgoCD pods running (argocd-server, argocd-application-controller, etc.).
+
+. Verify ArgoCD CRDs are available:
++
+[source,bash,role=execute]
+----
+oc get crd applications.argoproj.io
+----
++
+This should return the Application CRD without errors.
+
+=== Step 5: Understanding the Performance Operator Architecture
 
 Before deploying, let's understand what components we're working with:
 
@@ -224,7 +339,7 @@ Before deploying, let's understand what components we're working with:
 | Manages TuneD profiles AND Performance Profiles. Handles CPU isolation, real-time kernels, and system-level tuning. Built-in since OpenShift 4.11+
 | Built-in ✅
 
-| *SR-IOV Network Operator*  
+| *SR-IOV Network Operator*
 | Provides high-performance networking with direct hardware access for low-latency applications
 | ArgoCD App 📦
 
@@ -233,7 +348,7 @@ Before deploying, let's understand what components we're working with:
 | ArgoCD App 📦
 |===
 
-=== Step 5: Deploy the Applications
+=== Step 6: Deploy the Applications
 
 . Deploy all required operators:
 +
@@ -251,6 +366,13 @@ watch "oc get applications.argoproj.io -n openshift-gitops"
 
 # Check application status
 oc get applications.argoproj.io -n openshift-gitops -o wide
+----
+. Switch back to target cluster:
++
+[source,bash,role=execute]
+----
+# Log into the target cluster (replace with your target cluster details)
+oc login -u kubeadmin -p <target-cluster-password> https://api.cluster-xxxx.dynamic.redhatworkshops.io:6443
 ----
 
 . Verify built-in Node Tuning Operator (OpenShift 4.19):
