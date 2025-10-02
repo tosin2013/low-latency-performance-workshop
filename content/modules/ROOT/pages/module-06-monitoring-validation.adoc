@@ -9,8 +9,20 @@ This module focuses on comprehensive monitoring and validation of low-latency pe
 
 * Completed Module 5 (Low-latency Virtualization)
 * Performance baselines established from Module 3
-* Performance tuning applied in Module 4
+* Optional: Performance tuning from Module 4 (for enhanced monitoring)
 * VMI and network policy testing from Module 5
+
+[NOTE]
+====
+**Module 4 Dependency**
+
+This module can validate performance with or without Module 4 optimizations:
+
+* **With Module 4**: Monitor optimized performance and validate improvements
+* **Without Module 4**: Monitor baseline performance and identify optimization opportunities
+
+The monitoring setup adapts to your cluster's current configuration.
+====
 
 == Key Learning Objectives
 
@@ -35,14 +47,14 @@ Before diving into monitoring, let's recap the performance improvements achieved
 | 5.4s average (baseline established)
 
 | **Module 4**
-| Performance Tuning
+| Performance Tuning (Optional)
 | Tuned pod latency
-| Expected 50% improvement with CPU isolation
+| 50-70% improvement with CPU isolation (if applied)
 
 | **Module 5**
 | Virtualization
 | VMI startup + Network policies
-| VMI: <45s target, NetPol: <5s target
+| VMI: 60-90s (varies by tuning), NetPol: <10s
 
 | **Module 6**
 | Monitoring (current)
@@ -50,8 +62,83 @@ Before diving into monitoring, let's recap the performance improvements achieved
 | Sustained performance assurance
 |===
 
-[id="performance-monitoring"]
+[NOTE]
+====
+**Performance Expectations by Configuration**
+
+* **Without Module 4 tuning**: Baseline container performance (~5.4s), VMI startup 90-150s
+* **With Module 4 tuning**: Improved container performance (~2-3s), VMI startup 60-90s
+* **Network policies**: 5-20s depending on cluster configuration and tuning
+====
+
+[[performance-monitoring]]
 == Performance Monitoring Setup
+
+=== Cluster Configuration Assessment
+
+Before setting up monitoring, let's assess the current cluster configuration to understand what performance characteristics to monitor.
+
+. **Detect current performance optimizations**:
++
+[source,bash,role=execute]
+----
+echo "🔍 Assessing Current Cluster Performance Configuration..."
+echo ""
+
+# Check for Performance Profiles (Module 4)
+PERF_PROFILES=$(oc get performanceprofile --no-headers 2>/dev/null | wc -l)
+if [ "$PERF_PROFILES" -gt 0 ]; then
+    echo "✅ Performance Profiles Found: $PERF_PROFILES"
+    echo "   📊 Expected Performance: Optimized (50-70% improvement)"
+    echo "   🎯 Monitoring Focus: Validate tuning effectiveness"
+    CLUSTER_TUNING="OPTIMIZED"
+    oc get performanceprofile -o custom-columns=NAME:.metadata.name,ISOLATED:.spec.cpu.isolated,RESERVED:.spec.cpu.reserved
+else
+    echo "ℹ️  No Performance Profiles Found"
+    echo "   📊 Expected Performance: Baseline"
+    echo "   🎯 Monitoring Focus: Identify optimization opportunities"
+    CLUSTER_TUNING="BASELINE"
+fi
+
+echo ""
+
+# Check for VMI test results (Module 5)
+VMI_METRICS_DIR="~/kube-burner-configs/collected-metrics-vmi"
+if [ -d "$VMI_METRICS_DIR" ] && [ -f "$VMI_METRICS_DIR/vmiLatencyMeasurement-vmi-latency-test.json" ]; then
+    echo "✅ VMI Performance Data Available"
+    echo "   📊 VMI tests completed in Module 5"
+    VMI_TESTING="COMPLETED"
+else
+    echo "ℹ️  No VMI Performance Data Found"
+    echo "   📊 VMI testing may not have been completed"
+    VMI_TESTING="PENDING"
+fi
+
+echo ""
+
+# Check for baseline metrics (Module 3)
+BASELINE_METRICS_DIR="~/kube-burner-configs/collected-metrics"
+if [ -d "$BASELINE_METRICS_DIR" ]; then
+    echo "✅ Baseline Performance Data Available"
+    echo "   📊 Baseline established in Module 3"
+    BASELINE_TESTING="COMPLETED"
+else
+    echo "⚠️  No Baseline Performance Data Found"
+    echo "   📊 Baseline testing may not have been completed"
+    BASELINE_TESTING="MISSING"
+fi
+
+echo ""
+echo "🎯 Monitoring Configuration Summary:"
+echo "   Cluster Tuning: $CLUSTER_TUNING"
+echo "   VMI Testing: $VMI_TESTING"
+echo "   Baseline Data: $BASELINE_TESTING"
+
+# Save configuration for later use
+echo "CLUSTER_TUNING=$CLUSTER_TUNING" > /tmp/monitoring-config
+echo "VMI_TESTING=$VMI_TESTING" >> /tmp/monitoring-config
+echo "BASELINE_TESTING=$BASELINE_TESTING" >> /tmp/monitoring-config
+----
 
 === OpenShift Built-in Monitoring Stack
 
@@ -306,7 +393,7 @@ spec:
 EOF
 ----
 
-[id="validation-tools"]
+[[validation-tools]]
 == Validation Tools and Techniques
 
 === Comprehensive Performance Validation
@@ -563,7 +650,7 @@ EOF
 chmod +x detect-regressions.sh
 ----
 
-[id="best-practices"]
+[[best-practices]]
 == Best Practices for Production Monitoring
 
 === Monitoring Strategy Best Practices
@@ -702,7 +789,96 @@ chmod +x detect-regressions.sh
 * Set up monitoring and alerting for production readiness
 * Implement continuous performance testing workflows
 
-. **Execute the comprehensive validation**:
+. **Run the comprehensive workshop validator**:
++
+[source,bash,role=execute]
+----
+# Validate entire workshop completion
+echo "🔍 Running Comprehensive Workshop Validation..."
+python3 ~/low-latency-performance-workshop/scripts/module06-comprehensive-validator.py
+
+# Generate detailed validation report
+python3 ~/low-latency-performance-workshop/scripts/module06-comprehensive-validator.py --report
+
+# Specify custom metrics directory if needed
+python3 ~/low-latency-performance-workshop/scripts/module06-comprehensive-validator.py \
+    --metrics-dir ~/kube-burner-configs \
+    --report
+----
++
+This validator checks:
++
+* Module 3: Baseline performance metrics collected
+* Module 4: Performance tuning applied (optional)
+* Module 5: VMI and network testing completed
+* Cluster health and configuration
+* Overall performance improvements
+
+. **Generate workshop summary**:
++
+[source,bash,role=execute]
+----
+# Generate comprehensive workshop summary
+echo "🎉 Generating Workshop Summary..."
+python3 ~/low-latency-performance-workshop/scripts/module06-workshop-summary.py
+
+# Save summary to file
+python3 ~/low-latency-performance-workshop/scripts/module06-workshop-summary.py --no-color \
+    > workshop-summary-$(date +%Y%m%d).txt
+----
++
+The summary includes:
++
+* Module overview and learning journey
+* Performance improvement statistics
+* Key technologies and techniques
+* Best practices learned
+* Production readiness checklist
+* Next steps and resources
+
+. **Detect performance regressions**:
++
+[source,bash,role=execute]
+----
+# Save current metrics as baseline (first time)
+echo "💾 Saving Performance Baseline..."
+python3 ~/low-latency-performance-workshop/scripts/module06-performance-regression-detector.py \
+    --save-baseline
+
+# Later, detect regressions against baseline
+echo "🔍 Detecting Performance Regressions..."
+python3 ~/low-latency-performance-workshop/scripts/module06-performance-regression-detector.py
+
+# Use custom threshold (default: 10%)
+python3 ~/low-latency-performance-workshop/scripts/module06-performance-regression-detector.py \
+    --threshold 15
+
+# Specify custom baseline file
+python3 ~/low-latency-performance-workshop/scripts/module06-performance-regression-detector.py \
+    --baseline /path/to/baseline.json
+----
++
+The regression detector:
++
+* Compares current vs historical performance
+* Alerts on regressions exceeding threshold
+* Analyzes P50, P95, P99 percentiles
+* Saves/loads performance baselines
+* Provides actionable recommendations
+
+[TIP]
+====
+**Recommended Workflow:**
+
+1. Run `module06-comprehensive-validator.py` to verify all modules are complete
+2. Run `module06-performance-regression-detector.py --save-baseline` to save current performance
+3. After any changes, run the regression detector to check for performance degradation
+4. Run `module06-workshop-summary.py` to generate final workshop report
+
+These scripts work together to provide complete workshop validation and ongoing performance monitoring.
+====
+
+. **Execute the comprehensive validation** (optional bash scripts):
 +
 [source,bash,role=execute]
 ----
@@ -720,6 +896,65 @@ echo "🔍 Checking for performance regressions..."
 echo "📊 Final Validation Report:"
 echo "=========================="
 cat comprehensive-validation-report-$(date +%Y%m%d).md
+----
+
+. **Generate comprehensive Python-based analysis**:
++
+[source,bash,role=execute]
+----
+cd ~/kube-burner-configs
+
+# Load monitoring configuration from earlier assessment
+source /tmp/monitoring-config 2>/dev/null || {
+    echo "⚠️  Monitoring config not found, detecting current state..."
+    CLUSTER_TUNING="UNKNOWN"
+    VMI_TESTING="UNKNOWN"
+    BASELINE_TESTING="UNKNOWN"
+}
+
+echo "🎓 Generating Final Workshop Performance Analysis..."
+echo "Configuration: Tuning=$CLUSTER_TUNING, VMI=$VMI_TESTING, Baseline=$BASELINE_TESTING"
+echo ""
+
+# Generate comprehensive Module 6 analysis
+echo "🎯 Module 6 Comprehensive Analysis (All Workshop Data)..."
+python3 ~/low-latency-performance-workshop/scripts/module-specific-analysis.py 6
+
+echo ""
+echo "📄 Generating Final Workshop Report..."
+REPORT_FILE="final_workshop_analysis_$(date +%Y%m%d-%H%M).md"
+
+# Generate comprehensive report with all available data
+if [ -d "collected-metrics" ] && [ -d "collected-metrics-tuned" ] && [ -d "collected-metrics-vmi" ]; then
+    echo "📊 Full workshop report: Baseline + Tuned + VMI"
+    python3 ~/low-latency-performance-workshop/scripts/analyze-performance.py \
+        --baseline collected-metrics \
+        --tuned collected-metrics-tuned \
+        --vmi collected-metrics-vmi \
+        --report "$REPORT_FILE"
+elif [ -d "collected-metrics" ] && [ -d "collected-metrics-vmi" ]; then
+    echo "📊 Baseline + VMI report"
+    python3 ~/low-latency-performance-workshop/scripts/analyze-performance.py \
+        --baseline collected-metrics \
+        --vmi collected-metrics-vmi \
+        --report "$REPORT_FILE"
+elif [ -d "collected-metrics-vmi" ]; then
+    echo "📊 VMI-only report"
+    python3 ~/low-latency-performance-workshop/scripts/analyze-performance.py \
+        --single collected-metrics-vmi \
+        --report "$REPORT_FILE"
+else
+    echo "❌ No performance metrics found for comprehensive analysis"
+    echo "   Please ensure you've completed the performance tests from previous modules"
+fi
+
+echo ""
+echo "📊 Performance Summary:"
+python3 ~/low-latency-performance-workshop/scripts/module04-performance-summary.py
+
+echo ""
+echo "📄 Generated Analysis Reports:"
+ls -la *analysis*.md 2>/dev/null || echo "No analysis reports found"
 ----
 
 . **Verify monitoring and alerting setup**:
@@ -760,9 +995,9 @@ This module completed the low-latency performance workshop by implementing compr
 | ✅ 5.4s average baseline established
 
 | **Module 4**
-| Performance Tuning
-| Pod startup: <15s P99 (50% improvement)
-| ✅ CPU isolation and HugePages applied
+| Performance Tuning (Optional)
+| Pod startup: <3s P99 (50-70% improvement if applied)
+| ✅ CPU isolation and HugePages (if completed)
 
 | **Module 5**
 | Virtualization

@@ -13,14 +13,15 @@ all: help
 # Target to display help
 help:
 	@echo "Available targets:"
-	@echo "  help        - Display this help message"
-	@echo "  serve       - Run lab-serve"
-	@echo "  stop        - Run lab-stop"
-	@echo "  build       - Run lab-build"
-	@echo "  clean       - Run lab-clean"
-	@echo "  run-all     - Run build and then serve"
-	@echo "  stop-clean  - Run stop and then clean"
-	@echo "  clean-build - Run clean and then build"
+	@echo "  help          - Display this help message"
+	@echo "  serve         - Run lab-serve"
+	@echo "  stop          - Run lab-stop"
+	@echo "  build         - Run lab-build (with document validation)"
+	@echo "  clean         - Run lab-clean"
+	@echo "  validate      - Validate all documents (YAML, AsciiDoc, Markdown)"
+	@echo "  run-all       - Run build and then serve"
+	@echo "  stop-clean    - Run stop and then clean"
+	@echo "  clean-build   - Run clean and then build"
 
 # Target to run lab-serve
 serve:
@@ -42,6 +43,11 @@ clean:
 	@echo "Running lab-clean..."
 	@$(LAB_CLEAN)
 
+# Target to validate all documents
+validate:
+	@echo "Validating all documents..."
+	@./scripts/validate-documents.sh
+
 # Target to run all commands in sequence
 run-all: build serve
 
@@ -52,4 +58,4 @@ stop-clean: stop clean
 clean-build: clean build
 
 # Phony targets
-.PHONY: all help serve stop build clean run-all stop-clean clean-build
+.PHONY: all help serve stop build clean validate run-all stop-clean clean-build

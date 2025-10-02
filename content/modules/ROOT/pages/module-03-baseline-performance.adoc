@@ -1,6 +1,6 @@
 = Module 3: Baseline Performance Testing and Measurement
 
-[id="introduction"]
+[[introduction]]
 == Module Overview
 
 In this module, you will establish baseline performance metrics for your OpenShift cluster before implementing any low-latency optimizations. Understanding your starting point is crucial for measuring the effectiveness of performance tuning efforts.
@@ -30,7 +30,7 @@ This module requires:
 .*Performance Testing Overview*
 In this hands-on lab, you'll use kube-burner, a Kubernetes performance testing tool specifically designed to stress test OpenShift clusters. We'll focus on measuring pod creation latency, which is a critical metric for applications requiring fast scaling and low startup times.
 
-[id="connecting-to-target-cluster"]
+[[connecting-to-target-cluster]]
 == Connecting to Your Target Cluster
 
 Before beginning performance testing, you must connect to your target cluster that was set up and imported in Module 2.
@@ -101,7 +101,7 @@ oc get csv --all-namespaces | grep -E "(sriov|kubevirt|virtualization)"
 oc get tuned -n openshift-cluster-node-tuning-operator
 ----
 
-[id="what-is-low-latency"]
+[[what-is-low-latency]]
 == What is Low-Latency and Why Does it Matter?
 
 Low-latency computing refers to minimizing the delay between an input and its corresponding output. In containerized environments, this translates to:
@@ -120,7 +120,7 @@ Low-latency performance is essential for:
 * High-frequency data processing workloads
 * Live video/audio processing systems
 
-[id="verifying-target-cluster"]
+[[verifying-target-cluster]]
 == Verifying Your Target Cluster Configuration
 
 Now that you're connected to your target cluster, let's verify it meets the requirements for performance testing and has the components installed from Module 2.
@@ -149,7 +149,7 @@ oc get nodes -o wide
 # Check node resources
 oc describe nodes | grep -E "(Name:|cpu:|memory:|Capacity|Allocatable)"
 
-# Verify worker node count (minimum 3 recommended)
+# Verify worker node count (Optional)
 oc get nodes --selector='node-role.kubernetes.io/worker' --no-headers | wc -l
 ----
 
@@ -170,7 +170,7 @@ oc get csv -n openshift-cnv 2>/dev/null || echo "OpenShift Virtualization not in
 oc get crd performanceprofiles.performance.openshift.io
 ----
 
-[id="establishing-baseline"]
+[[establishing-baseline]]
 == Establishing Baseline Performance Metrics
 
 Before implementing any performance optimizations, we need to establish baseline metrics on your target cluster. This provides a reference point for measuring the effectiveness of our tuning efforts in subsequent modules.
@@ -187,7 +187,7 @@ We're running performance tests on the target cluster (not the hub cluster) beca
 * **Comparison**: Baseline and post-tuning metrics come from the same system
 ====
 
-[id="performance-testing-environment"]
+[[performance-testing-environment]]
 === Setting up the Performance Testing Environment
 
 . Create a dedicated namespace for performance testing:
@@ -216,7 +216,7 @@ oc get nodes --selector='node-role.kubernetes.io/worker' --no-headers
 # oc label node <worker-node-name> performance-testing=true
 ----
 
-[id="install-kube-burner"]
+[[install-kube-burner]]
 === Installing kube-burner for Performance Testing
 
 Kube-burner is a performance testing tool designed specifically for Kubernetes clusters. It can stress-test various aspects of cluster performance.
@@ -229,27 +229,13 @@ Kube-burner is a performance testing tool designed specifically for Kubernetes c
 mkdir -p ~/kube-burner && cd ~/kube-burner
 
 # Download the latest kube-burner binary for Linux
-curl -L https://github.com/kube-burner/kube-burner/archive/refs/tags/v1.17.4.tar.gz -o kube-burner.tar.gz
+curl -L https://github.com/kube-burner/kube-burner/releases/download/v1.17.5/kube-burner-V1.17.5-linux-x86_64.tar.gz -o kube-burner.tar.gz
 
 # Extract the binary
 tar -xzf kube-burner.tar.gz
-
-# Make it executable and move to PATH
-
-# Temp
-curl -OL https://go.dev/dl/go1.25.1.linux-amd64.tar.gz
-sudo tar -C /usr/local -xvf go1.25.1.linux-amd64.tar.gz
-sudo yum install git 
-mkdir -p ~/go/{src,bin}
-echo 'export GOPATH=$HOME/go' >> ~/.bashrc
-cd ~
-echo 'export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin' >> ~/.bashrc
-source .bashrc
-go
-cd kube-burner-1.17.4
-go build -o kube-burner
-chmod +x bin/amd64/kube-burner
-sudo mv bin/amd64/kube-burner /usr/local/bin/
+ls ~/
+cd ~/
+sudo mv kube-burner /usr/local/bin/
 
 # Verify installation
 kube-burner version || echo "kube-burner installed successfully"
@@ -344,7 +330,7 @@ cat baseline-config.yml | head -10
 cat pod.yml | head -10
 ----
 
-[id="run-baseline-tests"]
+[[run-baseline-tests]]
 === Running Baseline Performance Tests
 
 Now let's execute our baseline performance test to measure the current cluster performance.
@@ -384,7 +370,7 @@ INFO[2025-09-05T10:30:15Z] 📊 Job baseline-workload: 20 iterations
 INFO[2025-09-05T10:30:45Z] ✅ Job baseline-workload completed in 30s
 ----
 
-[id="analyze-results"]
+[[analyze-results]]
 === Analyzing Baseline Results
 
 . View the pod latency metrics from the collected data:
@@ -500,6 +486,64 @@ oc get namespaces | grep baseline-workload | awk '{print $1}' | xargs -r oc dele
 # Verify cleanup
 oc get namespaces | grep baseline-workload || echo "Cleanup completed successfully"
 ----
+
+=== Using Educational Analysis Scripts
+
+The workshop provides educational Python scripts to help you understand and analyze your baseline metrics.
+
+. *Baseline Analyzer* - Simplified analysis with educational explanations:
++
+[source,bash,role=execute]
+----
+# Run the baseline analyzer with educational output
+python3 ~/low-latency-performance-workshop/scripts/module03-baseline-analyzer.py \
+    --metrics-dir ~/kube-burner-configs
+
+# Generate a detailed report
+python3 ~/low-latency-performance-workshop/scripts/module03-baseline-analyzer.py \
+    --metrics-dir ~/kube-burner-configs \
+    --report
+----
++
+This script provides:
++
+* Educational explanations of baseline performance concepts
+* Interpretation of P50, P95, P99 percentiles
+* Guidance on what the metrics mean for your cluster
+* Next steps in the workshop journey
+
+. *Metrics Explainer* - Interactive learning tool for performance metrics:
++
+[source,bash,role=execute]
+----
+# Learn about percentiles
+python3 ~/low-latency-performance-workshop/scripts/module03-metrics-explainer.py \
+    --topic percentiles
+
+# Understand why P99 matters
+python3 ~/low-latency-performance-workshop/scripts/module03-metrics-explainer.py \
+    --topic p99
+
+# Learn about latency types
+python3 ~/low-latency-performance-workshop/scripts/module03-metrics-explainer.py \
+    --topic latency
+
+# Take an interactive quiz
+python3 ~/low-latency-performance-workshop/scripts/module03-metrics-explainer.py \
+    --topic quiz
+
+# See all topics
+python3 ~/low-latency-performance-workshop/scripts/module03-metrics-explainer.py \
+    --topic all
+----
++
+This interactive tool helps you understand:
++
+* What percentiles are and why they matter
+* The difference between P50, P95, and P99
+* Why P99 is critical for low-latency systems
+* Different types of latency in Kubernetes
+* How to interpret performance metrics
 
 === Understanding Your Results
 

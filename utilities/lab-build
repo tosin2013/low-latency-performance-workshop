@@ -1,5 +1,72 @@
-#!/usr/bin/env bash
+ls -la collected-metrics-vmi/#!/usr/bin/env bash
 #
+# Lab build script with pre-build document validation
+
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Parse command line arguments
+SKIP_VALIDATION=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-validation)
+            SKIP_VALIDATION=true
+            shift
+            ;;
+        --help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --skip-validation    Skip document validation before build"
+            echo "  --help               Show this help message"
+            echo ""
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+echo ""
+echo "=================================================="
+echo -e "${BLUE}Low-Latency Performance Workshop - Build${NC}"
+echo "=================================================="
+echo ""
+
+# Run document validation before building
+if [ "$SKIP_VALIDATION" = false ]; then
+    echo -e "${BLUE}ℹ${NC} Validating document formatting before build..."
+    echo ""
+
+    if [ -f "scripts/validate-documents.sh" ]; then
+        # Validate all content files
+        if ! ./scripts/validate-documents.sh content/modules/ROOT/pages/*.adoc content/antora.yml default-site.yml 2>&1; then
+            echo ""
+            echo -e "${RED}✗ Document validation failed!${NC}"
+            echo ""
+            echo "Please fix the formatting issues above before building."
+            echo "To skip validation, use: $0 --skip-validation"
+            exit 1
+        fi
+        echo ""
+        echo -e "${GREEN}✓ Document validation passed!${NC}"
+        echo ""
+    else
+        echo -e "${YELLOW}⚠ Validation script not found at scripts/validate-documents.sh${NC}"
+        echo ""
+    fi
+else
+    echo -e "${YELLOW}⚠ Skipping document validation${NC}"
+    echo ""
+fi
 
 echo "Starting build process..."
 echo "Removing old site..."
@@ -10,6 +77,14 @@ podman run --rm --name showroom-builder --platform linux/amd64 \
   -v "./:/antora:z" \
   docker.io/antora/antora --stacktrace default-site.yml
 
-echo "Build process complete. Check the ./www folder for the generated site."
-echo "To view the site locally, run the following command: utilities/lab-serve"
-echo "If already running then browse to http://localhost:8080/index.html"
+echo ""
+echo "=================================================="
+echo -e "${GREEN}✓ Build process complete!${NC}"
+echo "=================================================="
+echo ""
+echo "Generated site location: ./www"
+echo ""
+echo "Next steps:"
+echo "  1. View the site locally: utilities/lab-serve"
+echo "  2. Or browse to: http://localhost:8080/index.html (if already running)"
+echo ""
