@@ -394,10 +394,10 @@ oc get tuned default -n openshift-cluster-node-tuning-operator -o yaml
 [source,bash,role=execute]
 ----
 # SR-IOV Network Operator
-oc get csv -n openshift-sriov-network-operator --context=<target-cluster-context>
+oc get csv -n openshift-sriov-network-operator 
 
 # OpenShift Virtualization  
-oc get csv -n openshift-cnv --context=<target-cluster-context>
+oc get csv -n openshift-cnv 
 ----
 
 === Alternative: Manual Setup (Optional)

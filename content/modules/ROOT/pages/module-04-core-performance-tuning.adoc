@@ -1,4 +1,4 @@
-= Module 3: Core Performance Tuning with Performance Profiles
+= Module 4: Core Performance Tuning with Performance Profiles
 
 [%hardbreaks]
 == Module Overview
@@ -18,8 +18,9 @@ This module is the heart of the workshop, where you'll apply node-level performa
 Before starting this module, ensure you have completed:
 
 * Module 1: Workshop Setup and Multi-Cluster Management
-* Module 2: Low-Latency Fundamentals and Baseline Performance
-* Established baseline performance metrics using kube-burner
+* Module 2: GitOps Deployment and Operator Installation
+* Module 3: Baseline Performance Measurement and Analysis
+* Established baseline performance metrics using kube-burner from Module 3
 
 == Understanding Performance Profiles
 
@@ -27,7 +28,7 @@ The Performance Profile Controller (PPC) is integrated into the Node Tuning Oper
 
 .*Key Components*
 * *CPU Management*: Isolate specific CPUs for high-performance workloads
-* *Memory Tuning*: Configure HugePages and memory-related kernel parameters  
+* *Memory Tuning*: Configure HugePages and memory-related kernel parameters
 * *Kernel Tuning*: Apply real-time kernel settings and tuned profiles
 * *NUMA Awareness*: Optimize for Non-Uniform Memory Access architectures
 
@@ -39,9 +40,9 @@ The Performance Profile Controller (PPC) is integrated into the Node Tuning Oper
 
 == Hands-on Exercise: Creating a Performance Profile
 
-=== Step 1: Identify Target Nodes
+=== Step 1: Identify Target Nodes and Environment
 
-First, we'll identify and label the nodes in your target cluster that will receive performance tuning.
+First, we'll identify your cluster architecture and configure the appropriate nodes for performance tuning.
 
 . Switch to your target cluster context:
 +
@@ -50,44 +51,117 @@ First, we'll identify and label the nodes in your target cluster that will recei
 oc config use-context target-cluster
 ----
 
-. List available worker nodes:
+. Detect your cluster architecture:
 +
 [source,bash,role=execute]
 ----
-oc get nodes -l node-role.kubernetes.io/worker=
+# Check cluster architecture
+TOTAL_NODES=$(oc get nodes --no-headers | wc -l)
+WORKER_NODES=$(oc get nodes -l node-role.kubernetes.io/worker= --no-headers | wc -l)
+MASTER_NODES=$(oc get nodes -l node-role.kubernetes.io/master= --no-headers | wc -l)
+
+echo "=== Cluster Architecture Detection ==="
+echo "Total nodes: $TOTAL_NODES"
+echo "Master nodes: $MASTER_NODES"
+echo "Worker nodes: $WORKER_NODES"
+
+if [ $TOTAL_NODES -eq 1 ]; then
+    echo "✅ Detected: Single Node OpenShift (SNO)"
+    CLUSTER_TYPE="SNO"
+    TARGET_NODE=$(oc get nodes -o jsonpath='{.items[0].metadata.name}')
+    echo "Target node: $TARGET_NODE"
+elif [ $WORKER_NODES -gt 0 ]; then
+    echo "✅ Detected: Multi-node cluster with dedicated workers"
+    CLUSTER_TYPE="MULTI_NODE"
+    TARGET_NODE=$(oc get nodes -l node-role.kubernetes.io/worker= -o jsonpath='{.items[0].metadata.name}')
+    echo "Target worker node: $TARGET_NODE"
+else
+    echo "⚠️  Detected: Multi-node cluster without dedicated workers"
+    CLUSTER_TYPE="MULTI_MASTER"
+    TARGET_NODE=$(oc get nodes -l node-role.kubernetes.io/master= -o jsonpath='{.items[0].metadata.name}')
+    echo "Target master node: $TARGET_NODE"
+fi
+
+echo "CLUSTER_TYPE=$CLUSTER_TYPE" > /tmp/cluster-config
+echo "TARGET_NODE=$TARGET_NODE" >> /tmp/cluster-config
 ----
 
 . Check node resources and CPU topology:
 +
 [source,bash,role=execute]
 ----
+# Load cluster configuration
+source /tmp/cluster-config
+
 # Get detailed node information
-oc describe node $(oc get nodes -l node-role.kubernetes.io/worker= -o jsonpath='{.items[0].metadata.name}')
+echo "=== Node Information for $TARGET_NODE ==="
+oc describe node $TARGET_NODE | grep -E "(Name:|Roles:|Capacity:|Allocatable:)" -A 10
 
 # Check CPU information
-oc debug node/$(oc get nodes -l node-role.kubernetes.io/worker= -o jsonpath='{.items[0].metadata.name}') -- chroot /host lscpu
+echo "=== CPU Topology ==="
+oc debug node/$TARGET_NODE -- chroot /host lscpu | grep -E "(CPU\(s\)|Thread|Core|Socket|NUMA)"
 ----
 
-. Label nodes for performance tuning:
+. Configure node labels based on cluster type:
 +
 [source,bash,role=execute]
 ----
-# Label the worker node(s) for performance tuning
-oc label node $(oc get nodes -l node-role.kubernetes.io/worker= -o jsonpath='{.items[0].metadata.name}') node-role.kubernetes.io/worker-rt=
+# Load cluster configuration
+source /tmp/cluster-config
 
-# Verify the label
-oc get nodes --show-labels | grep worker-rt
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    echo "=== SNO Configuration ==="
+    echo "✅ Single Node OpenShift detected - no additional labeling needed"
+    echo "Performance Profile will target: node-role.kubernetes.io/master"
+
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo "=== Multi-Node Configuration ==="
+    echo "🏷️  Labeling worker node for performance tuning..."
+
+    # Label the worker node(s) for performance tuning
+    oc label node $TARGET_NODE node-role.kubernetes.io/worker-rt= --overwrite
+
+    # Verify the label
+    echo "✅ Labeled nodes:"
+    oc get nodes --show-labels | grep worker-rt
+
+else
+    echo "=== Multi-Master Configuration ==="
+    echo "🏷️  Labeling master node for performance tuning..."
+
+    # Label a master node for performance tuning (advanced scenario)
+    oc label node $TARGET_NODE node-role.kubernetes.io/master-rt= --overwrite
+
+    # Verify the label
+    echo "✅ Labeled nodes:"
+    oc get nodes --show-labels | grep master-rt
+fi
 ----
 
-=== Step 2: Create a Machine Config Pool
+=== Step 2: Create Machine Config Pool (Multi-Node Only)
 
-Create a dedicated Machine Config Pool for performance-tuned nodes to isolate the configuration changes.
+For multi-node clusters, create a dedicated Machine Config Pool to isolate performance configuration changes. SNO clusters can skip this step.
 
-. Create the performance Machine Config Pool:
+. Create Machine Config Pool based on cluster type:
 +
 [source,bash,role=execute]
 ----
-cat << 'EOF' | oc apply -f -
+# Load cluster configuration
+source /tmp/cluster-config
+
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    echo "=== SNO Configuration ==="
+    echo "✅ Skipping Machine Config Pool creation for Single Node OpenShift"
+    echo "📝 SNO uses existing 'master' Machine Config Pool"
+    echo ""
+    echo "Existing Machine Config Pools:"
+    oc get mcp
+
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo "=== Multi-Node Configuration ==="
+    echo "🔧 Creating dedicated worker-rt Machine Config Pool..."
+
+    cat << 'EOF' | oc apply -f -
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -103,50 +177,232 @@ spec:
       node-role.kubernetes.io/worker-rt: ""
   paused: false
 EOF
+
+    echo "✅ Created worker-rt Machine Config Pool"
+
+else
+    echo "=== Multi-Master Configuration ==="
+    echo "🔧 Creating dedicated master-rt Machine Config Pool..."
+
+    cat << 'EOF' | oc apply -f -
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: master-rt
+  labels:
+    machineconfiguration.openshift.io/role: master-rt
+spec:
+  machineConfigSelector:
+    matchExpressions:
+    - {key: machineconfiguration.openshift.io/role, operator: In, values: [master, master-rt]}
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/master-rt: ""
+  paused: false
+EOF
+
+    echo "✅ Created master-rt Machine Config Pool"
+fi
 ----
 
-. Verify the Machine Config Pool:
+. Verify Machine Config Pool status:
 +
 [source,bash,role=execute]
 ----
-oc get mcp worker-rt
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Machine Config Pool Status ==="
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    echo "📋 SNO uses existing pools:"
+    oc get mcp
+else
+    echo "📋 All Machine Config Pools:"
+    oc get mcp
+
+    if [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+        echo ""
+        echo "📊 Worker-RT Pool Details:"
+        oc get mcp worker-rt -o yaml | grep -A 5 -B 5 "readyMachineCount\|updatedMachineCount"
+    else
+        echo ""
+        echo "📊 Master-RT Pool Details:"
+        oc get mcp master-rt -o yaml | grep -A 5 -B 5 "readyMachineCount\|updatedMachineCount"
+    fi
+fi
 ----
 
 === Step 3: Create the Performance Profile
 
-Now we'll create a Performance Profile that configures CPU isolation, HugePages, and real-time kernel settings.
+Now we'll create a Performance Profile that configures CPU isolation, HugePages, and real-time kernel settings optimized for your cluster architecture.
 
-. First, determine the optimal CPU allocation based on your node:
+. Determine optimal CPU allocation based on your cluster type:
 +
 [source,bash,role=execute]
 ----
-# Get the number of CPUs available
-NODE_NAME=$(oc get nodes -l node-role.kubernetes.io/worker-rt= -o jsonpath='{.items[0].metadata.name}')
-CPU_COUNT=$(oc debug node/$NODE_NAME -- chroot /host nproc)
-echo "Total CPUs available: $CPU_COUNT"
+# Load cluster configuration
+source /tmp/cluster-config
 
-# Calculate CPU allocation (reserve first 2 CPUs for system, isolate the rest)
-if [ $CPU_COUNT -gt 4 ]; then
-    RESERVED_CPUS="0-1"
-    ISOLATED_CPUS="2-$((CPU_COUNT-1))"
+# Get CPU information
+CPU_COUNT=$(oc debug node/$TARGET_NODE -- chroot /host nproc)
+echo "=== CPU Allocation Planning ==="
+echo "Target node: $TARGET_NODE"
+echo "Total CPUs available: $CPU_COUNT"
+echo "Cluster type: $CLUSTER_TYPE"
+
+# Calculate CPU allocation based on cluster architecture
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    echo ""
+    echo "🔧 SNO CPU Allocation Strategy (Workshop-Friendly):"
+    echo "   - Conservative allocation preserving cluster functionality"
+    echo "   - Reserve sufficient CPUs for control plane, container runtime, and system services"
+    echo "   - Target ~60-75% isolation for performance demonstration"
+
+    if [ $CPU_COUNT -gt 16 ]; then
+        # For high CPU count (32+ cores): Reserve ~40% for system, isolate ~60%
+        RESERVED_COUNT=$((CPU_COUNT * 40 / 100))
+        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
+        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
+        echo "   - High CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~40%) for system stability"
+    elif [ $CPU_COUNT -gt 8 ]; then
+        # For medium CPU count (16+ cores): Reserve ~50% for system, isolate ~50%
+        RESERVED_COUNT=$((CPU_COUNT / 2))
+        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
+        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
+        echo "   - Medium CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~50%) for system stability"
+    elif [ $CPU_COUNT -gt 4 ]; then
+        # For lower CPU count (8+ cores): Reserve ~60% for system, isolate ~40%
+        RESERVED_COUNT=$((CPU_COUNT * 60 / 100))
+        if [ $RESERVED_COUNT -lt 3 ]; then RESERVED_COUNT=3; fi  # Minimum 3 for SNO
+        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
+        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
+        echo "   - Lower CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~60%) for system stability"
+    else
+        # For very low CPU count: Reserve most for system, minimal isolation
+        RESERVED_CPUS="0-$((CPU_COUNT-2))"
+        ISOLATED_CPUS="$((CPU_COUNT-1))"
+        echo "   - Very low CPU count ($CPU_COUNT cores): Minimal isolation for demonstration only"
+    fi
+
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo ""
+    echo "🔧 Multi-Node CPU Allocation Strategy (Workshop-Friendly):"
+    echo "   - More aggressive allocation possible (control plane on separate nodes)"
+    echo "   - Target ~75% isolation while preserving worker node functionality"
+
+    if [ $CPU_COUNT -gt 8 ]; then
+        # For high CPU count: Reserve ~25% for system, isolate ~75%
+        RESERVED_COUNT=$((CPU_COUNT * 25 / 100))
+        if [ $RESERVED_COUNT -lt 2 ]; then RESERVED_COUNT=2; fi  # Minimum 2 for worker
+        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
+        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
+        echo "   - High CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~25%) for system"
+    elif [ $CPU_COUNT -gt 4 ]; then
+        # For medium CPU count: Reserve ~33% for system, isolate ~67%
+        RESERVED_COUNT=$((CPU_COUNT * 33 / 100))
+        if [ $RESERVED_COUNT -lt 2 ]; then RESERVED_COUNT=2; fi
+        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
+        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
+        echo "   - Medium CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~33%) for system"
+    else
+        # For low CPU count: Reserve 50% for system
+        RESERVED_CPUS="0-1"
+        ISOLATED_CPUS="2-$((CPU_COUNT-1))"
+        echo "   - Low CPU count ($CPU_COUNT cores): Reserve 2 CPUs (50%) for system"
+    fi
+
 else
-    RESERVED_CPUS="0"
-    ISOLATED_CPUS="1-$((CPU_COUNT-1))"
+    echo ""
+    echo "🔧 Multi-Master CPU Allocation Strategy (Workshop-Friendly):"
+    echo "   - Balanced allocation for control plane and workloads"
+    echo "   - Target ~60% isolation while maintaining control plane stability"
+
+    if [ $CPU_COUNT -gt 8 ]; then
+        # For high CPU count: Reserve ~40% for control plane, isolate ~60%
+        RESERVED_COUNT=$((CPU_COUNT * 40 / 100))
+        if [ $RESERVED_COUNT -lt 3 ]; then RESERVED_COUNT=3; fi  # Minimum 3 for master
+        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
+        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
+        echo "   - High CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~40%) for control plane"
+    elif [ $CPU_COUNT -gt 4 ]; then
+        # For medium CPU count: Reserve ~50% for control plane
+        RESERVED_COUNT=$((CPU_COUNT / 2))
+        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
+        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
+        echo "   - Medium CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~50%) for control plane"
+    else
+        # For low CPU count: Reserve most for control plane
+        RESERVED_CPUS="0-$((CPU_COUNT-2))"
+        ISOLATED_CPUS="$((CPU_COUNT-1))"
+        echo "   - Low CPU count ($CPU_COUNT cores): Minimal isolation for demonstration"
+    fi
 fi
 
-echo "Reserved CPUs: $RESERVED_CPUS"
-echo "Isolated CPUs: $ISOLATED_CPUS"
+echo ""
+echo "📊 Final CPU Allocation (Workshop-Optimized):"
+echo "   Reserved CPUs: $RESERVED_CPUS"
+echo "   Isolated CPUs: $ISOLATED_CPUS"
+
+# Calculate and display percentages for clarity
+RESERVED_COUNT=$(echo $RESERVED_CPUS | tr '-' ' ' | awk '{if(NF==2) print $2-$1+1; else print 1}')
+ISOLATED_COUNT=$(echo $ISOLATED_CPUS | tr '-' ' ' | awk '{if(NF==2) print $2-$1+1; else print 1}')
+RESERVED_PERCENT=$((RESERVED_COUNT * 100 / CPU_COUNT))
+ISOLATED_PERCENT=$((ISOLATED_COUNT * 100 / CPU_COUNT))
+
+echo "   Reserved: $RESERVED_COUNT CPUs ($RESERVED_PERCENT%) - System/Control Plane"
+echo "   Isolated: $ISOLATED_COUNT CPUs ($ISOLATED_PERCENT%) - High-Performance Workloads"
+echo ""
+echo "✅ This allocation preserves cluster functionality while demonstrating performance benefits"
+
+# Save CPU configuration
+echo "RESERVED_CPUS=$RESERVED_CPUS" >> /tmp/cluster-config
+echo "ISOLATED_CPUS=$ISOLATED_CPUS" >> /tmp/cluster-config
+echo "RESERVED_COUNT=$RESERVED_COUNT" >> /tmp/cluster-config
+echo "ISOLATED_COUNT=$ISOLATED_COUNT" >> /tmp/cluster-config
 ----
 
-. Create the Performance Profile:
+. Create the Performance Profile optimized for your cluster architecture:
 +
 [source,bash,role=execute]
 ----
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Creating Performance Profile ==="
+echo "Cluster type: $CLUSTER_TYPE"
+echo "Target node: $TARGET_NODE"
+echo "Reserved CPUs: $RESERVED_CPUS"
+echo "Isolated CPUs: $ISOLATED_CPUS"
+
+# Determine HugePages allocation based on cluster type
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    HUGEPAGES_COUNT=1    # Conservative for SNO
+    NODE_SELECTOR='node-role.kubernetes.io/master: ""'
+    PROFILE_NAME="sno-low-latency-profile"
+    echo "📝 SNO: Using conservative HugePages (1GB) and master node selector"
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    HUGEPAGES_COUNT=2    # Standard for dedicated workers
+    NODE_SELECTOR='node-role.kubernetes.io/worker-rt: ""'
+    PROFILE_NAME="worker-low-latency-profile"
+    echo "📝 Multi-Node: Using standard HugePages (2GB) and worker-rt selector"
+else
+    HUGEPAGES_COUNT=1    # Conservative for multi-master
+    NODE_SELECTOR='node-role.kubernetes.io/master-rt: ""'
+    PROFILE_NAME="master-low-latency-profile"
+    echo "📝 Multi-Master: Using conservative HugePages (1GB) and master-rt selector"
+fi
+
+echo ""
+echo "🚀 Creating Performance Profile: $PROFILE_NAME"
+
+# Create the Performance Profile with dynamic configuration
 cat << EOF | oc apply -f -
 apiVersion: performance.openshift.io/v2
 kind: PerformanceProfile
 metadata:
-  name: low-latency-profile
+  name: $PROFILE_NAME
+  labels:
+    cluster-type: "$CLUSTER_TYPE"
 spec:
   cpu:
     isolated: "$ISOLATED_CPUS"
@@ -154,10 +410,10 @@ spec:
   hugepages:
     defaultHugepagesSize: 1G
     pages:
-    - count: 2
+    - count: $HUGEPAGES_COUNT
       size: 1G
   nodeSelector:
-    node-role.kubernetes.io/worker-rt: ""
+    $NODE_SELECTOR
   numa:
     topologyPolicy: "single-numa-node"
   realTimeKernel:
@@ -167,89 +423,341 @@ spec:
   - "nohz_full=$ISOLATED_CPUS"
   - "rcu_nocbs=$ISOLATED_CPUS"
 EOF
+
+echo "✅ Performance Profile created successfully!"
+
+# Save profile name for later use
+echo "PROFILE_NAME=$PROFILE_NAME" >> /tmp/cluster-config
 ----
 
 . Verify the Performance Profile was created:
 +
 [source,bash,role=execute]
 ----
-oc get performanceprofile low-latency-profile -o yaml
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Performance Profile Verification ==="
+echo "Profile name: $PROFILE_NAME"
+echo ""
+
+# Check if the profile was created
+if oc get performanceprofile $PROFILE_NAME >/dev/null 2>&1; then
+    echo "✅ Performance Profile created successfully!"
+    echo ""
+    echo "📋 Profile Summary:"
+    oc get performanceprofile $PROFILE_NAME -o jsonpath='{.metadata.name}{"\n"}CPU Reserved: {.spec.cpu.reserved}{"\n"}CPU Isolated: {.spec.cpu.isolated}{"\n"}HugePages: {.spec.hugepages.pages[0].count}x{.spec.hugepages.pages[0].size}{"\n"}RT Kernel: {.spec.realTimeKernel.enabled}{"\n"}'
+    echo ""
+    echo "🔍 Full Profile Configuration:"
+    oc get performanceprofile $PROFILE_NAME -o yaml
+else
+    echo "❌ Performance Profile creation failed!"
+    echo "🔍 Checking for errors..."
+    oc get events --sort-by='.lastTimestamp' | tail -10
+fi
 ----
 
 === Step 4: Monitor the Performance Profile Application
 
-The Performance Profile will trigger a rolling update of your worker nodes. This process includes installing the real-time kernel and applying all the specified optimizations.
+The Performance Profile will trigger a rolling update of your nodes. This process includes installing the real-time kernel and applying all the specified optimizations. The monitoring approach varies by cluster architecture.
 
-. Monitor the Machine Config Pool status:
+. Monitor Machine Config Pool status based on cluster type:
 +
 [source,bash,role=execute]
 ----
-# Watch the worker-rt pool during updates
-watch "oc get mcp worker-rt"
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Monitoring Performance Profile Application ==="
+echo "Cluster type: $CLUSTER_TYPE"
+echo "Profile name: $PROFILE_NAME"
+echo "Target node: $TARGET_NODE"
+
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    echo ""
+    echo "🔍 SNO Monitoring Strategy:"
+    echo "   - Monitor 'master' Machine Config Pool"
+    echo "   - Single node will reboot (cluster temporarily unavailable)"
+    echo "   - Expect 5-15 minutes for RT kernel installation"
+    echo ""
+    echo "📊 Current master MCP status:"
+    oc get mcp master
+    echo ""
+    echo "⏱️  Starting continuous monitoring (Ctrl+C to stop):"
+    echo "watch 'oc get mcp master; echo; oc get nodes'"
+
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo ""
+    echo "🔍 Multi-Node Monitoring Strategy:"
+    echo "   - Monitor 'worker-rt' Machine Config Pool"
+    echo "   - Worker nodes will reboot sequentially"
+    echo "   - Control plane remains available"
+    echo ""
+    echo "📊 Current worker-rt MCP status:"
+    oc get mcp worker-rt
+    echo ""
+    echo "⏱️  Starting continuous monitoring (Ctrl+C to stop):"
+    echo "watch 'oc get mcp worker-rt; echo; oc get nodes'"
+
+else
+    echo ""
+    echo "🔍 Multi-Master Monitoring Strategy:"
+    echo "   - Monitor 'master-rt' Machine Config Pool"
+    echo "   - Master nodes will reboot sequentially"
+    echo "   - Cluster maintains quorum during updates"
+    echo ""
+    echo "📊 Current master-rt MCP status:"
+    oc get mcp master-rt
+    echo ""
+    echo "⏱️  Starting continuous monitoring (Ctrl+C to stop):"
+    echo "watch 'oc get mcp master-rt; echo; oc get nodes'"
+fi
 ----
 
 . Monitor node updates in detail:
 +
 [source,bash,role=execute]
 ----
-# Check the machine config daemon status
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Detailed Node Update Monitoring ==="
+
+# Check machine config daemon status
+echo "📋 Machine Config Daemon Pods:"
 oc get pods -n openshift-machine-config-operator | grep daemon
 
-# Watch node events
-oc get events --sort-by='.lastTimestamp' | grep $NODE_NAME
+echo ""
+echo "📋 Recent Node Events:"
+oc get events --sort-by='.lastTimestamp' --field-selector involvedObject.name=$TARGET_NODE | tail -10
+
+echo ""
+echo "📋 Machine Config Status:"
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    oc describe mcp master | grep -A 10 -B 5 "Conditions:"
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    oc describe mcp worker-rt | grep -A 10 -B 5 "Conditions:"
+else
+    oc describe mcp master-rt | grep -A 10 -B 5 "Conditions:"
+fi
 ----
 
 . Wait for the update to complete:
 +
 [source,bash,role=execute]
 ----
-# Wait for the machine config pool to be ready
-oc wait --for=condition=Updated mcp/worker-rt --timeout=1200s
+# Load cluster configuration
+source /tmp/cluster-config
 
-# Verify the node is ready after reboot
-oc wait --for=condition=Ready node/$NODE_NAME --timeout=300s
+echo "=== Waiting for Performance Profile Application ==="
+echo "This process may take 10-20 minutes depending on your environment"
+
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    echo ""
+    echo "⏳ SNO Update Process:"
+    echo "   1. Machine config generation"
+    echo "   2. Node cordoning and draining"
+    echo "   3. RT kernel installation and reboot"
+    echo "   4. Node rejoin and ready state"
+    echo ""
+    echo "🔄 Waiting for master MCP to be updated..."
+    oc wait --for=condition=Updated mcp/master --timeout=1200s
+
+    echo "🔄 Waiting for node to be ready after reboot..."
+    oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
+
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo ""
+    echo "⏳ Multi-Node Update Process:"
+    echo "   1. Worker-RT MCP configuration"
+    echo "   2. Sequential worker node updates"
+    echo "   3. RT kernel installation per node"
+    echo "   4. Node rejoin and ready state"
+    echo ""
+    echo "🔄 Waiting for worker-rt MCP to be updated..."
+    oc wait --for=condition=Updated mcp/worker-rt --timeout=1200s
+
+    echo "🔄 Waiting for target node to be ready..."
+    oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
+
+else
+    echo ""
+    echo "⏳ Multi-Master Update Process:"
+    echo "   1. Master-RT MCP configuration"
+    echo "   2. Sequential master node updates"
+    echo "   3. RT kernel installation per node"
+    echo "   4. Node rejoin and ready state"
+    echo ""
+    echo "🔄 Waiting for master-rt MCP to be updated..."
+    oc wait --for=condition=Updated mcp/master-rt --timeout=1200s
+
+    echo "🔄 Waiting for target node to be ready..."
+    oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
+fi
+
+echo ""
+echo "✅ Performance Profile application completed!"
+echo "📊 Final status:"
+oc get nodes
+oc get mcp
+
+echo ""
+echo "🧪 Testing cluster functionality after performance tuning..."
+
+# Create a simple test pod to verify the cluster is still functional
+cat << EOF | oc apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: post-tuning-test
+  namespace: default
+  labels:
+    app: post-tuning-test
+spec:
+  containers:
+  - name: test-container
+    image: registry.redhat.io/ubi8/ubi-minimal:latest
+    command: ["sleep"]
+    args: ["30"]
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+  restartPolicy: Never
+EOF
+
+# Wait for pod to be scheduled and running
+echo "⏱️  Waiting for test pod to verify cluster functionality..."
+if oc wait --for=condition=Ready pod/post-tuning-test --timeout=120s -n default 2>/dev/null; then
+    echo "   ✅ Cluster is functional after performance tuning!"
+    echo "   📍 Test pod scheduled successfully"
+    oc delete pod post-tuning-test -n default --ignore-not-found=true
+else
+    echo "   ⚠️  Cluster may have scheduling issues after performance tuning"
+    echo "   💡 Consider using the revert script if problems persist"
+    echo "   🔍 Check pod status: oc describe pod post-tuning-test -n default"
+fi
 ----
 
 === Step 5: Verify Performance Profile Effects
 
-Once the update is complete, verify that all the performance optimizations have been applied.
+Once the update is complete, verify that all the performance optimizations have been applied correctly across your cluster architecture.
 
-. Check the real-time kernel:
+. Comprehensive verification using Python health check script:
 +
 [source,bash,role=execute]
 ----
-oc debug node/$NODE_NAME -- chroot /host uname -a | grep rt
+echo "=== Performance Profile Verification ==="
+echo "Running comprehensive cluster health check..."
+echo ""
+
+# Use Python script for thorough verification
+python3 ~/low-latency-performance-workshop/scripts/module04-cluster-health-check.py
+
+echo ""
+echo "✅ Comprehensive verification completed!"
+echo ""
+echo "💡 The health check script validates:"
+echo "   - Cluster architecture detection"
+echo "   - Performance Profile status"
+echo "   - Real-time kernel installation"
+echo "   - CPU isolation configuration"
+echo "   - Pod scheduling functionality"
 ----
 
-. Verify CPU isolation:
+. Get a quick performance tuning summary:
 +
 [source,bash,role=execute]
 ----
-# Check isolated CPUs
-oc debug node/$NODE_NAME -- chroot /host cat /sys/devices/system/cpu/isolated
+echo "=== Performance Tuning Summary ==="
+echo ""
 
-# Check CPU governor settings
-oc debug node/$NODE_NAME -- chroot /host cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | sort | uniq -c
+# Get color-coded summary of current performance settings
+python3 ~/low-latency-performance-workshop/scripts/module04-performance-summary.py
+
+echo ""
+echo "💡 This summary shows:"
+echo "   - Current CPU allocation strategy"
+echo "   - Performance vs stability balance"
+echo "   - Recommendations for optimization"
 ----
 
-. Verify HugePages allocation:
+=== Detailed Performance Tuning Validation
+
+The workshop provides additional validation scripts to verify specific aspects of your performance tuning configuration.
+
+. *Performance Tuning Validator* - Comprehensive validation of Performance Profile:
 +
 [source,bash,role=execute]
 ----
-# Check HugePages configuration
-oc debug node/$NODE_NAME -- chroot /host cat /proc/meminfo | grep -i huge
+# Validate Performance Profile configuration
+python3 ~/low-latency-performance-workshop/scripts/module04-tuning-validator.py
 
-# Check HugePages availability in Kubernetes
-oc describe node $NODE_NAME | grep -A 5 -B 5 hugepages
+# Skip educational explanations for automation
+python3 ~/low-latency-performance-workshop/scripts/module04-tuning-validator.py --skip-explanation
 ----
++
+This script validates:
++
+* Performance Profile existence and configuration
+* Machine Config Pool (MCP) status and readiness
+* Real-Time kernel installation on target nodes
+* Overall tuning configuration health
 
-. Check tuned profile application:
+. *CPU Isolation Checker* - Detailed CPU allocation analysis:
 +
 [source,bash,role=execute]
 ----
-# Verify the tuned daemon is running the correct profile
-oc debug node/$NODE_NAME -- chroot /host tuned-adm active
+# Check CPU isolation configuration
+python3 ~/low-latency-performance-workshop/scripts/module04-cpu-isolation-checker.py
+
+# Specify a custom Performance Profile
+python3 ~/low-latency-performance-workshop/scripts/module04-cpu-isolation-checker.py \
+    --profile my-performance-profile
 ----
++
+This script provides:
++
+* Visual representation of CPU allocation
+* Reserved vs isolated CPU validation
+* CPU allocation strategy explanation
+* Best practices for CPU isolation
+* Configuration recommendations
+
+. *HugePages Validator* - HugePages configuration verification:
++
+[source,bash,role=execute]
+----
+# Validate HugePages configuration
+python3 ~/low-latency-performance-workshop/scripts/module04-hugepages-validator.py
+
+# Check specific Performance Profile
+python3 ~/low-latency-performance-workshop/scripts/module04-hugepages-validator.py \
+    --profile my-performance-profile
+----
++
+This script validates:
++
+* HugePages configuration in Performance Profile
+* Node HugePages allocation and availability
+* HugePages benefits and use cases
+* How to use HugePages in pod specifications
+* Total HugePages memory allocation
+
+[TIP]
+====
+These validation scripts are educational tools that help you understand:
+
+* What each performance tuning component does
+* How to verify configurations are correct
+* Best practices for low-latency tuning
+* Troubleshooting common issues
+
+Run them after applying Performance Profiles to ensure everything is configured correctly.
+====
 
 == Performance Testing: Measuring Improvements
 
@@ -257,14 +765,22 @@ Now let's run the same baseline test to measure the performance improvements fro
 
 === Step 6: Re-run Performance Tests
 
-. Re-run the kube-burner baseline test on the optimized cluster:
+. Re-run the kube-burner performance test on the optimized cluster:
 +
 [source,bash,role=execute]
 ----
 cd ~/kube-burner-configs
 
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Creating Tuned Performance Test Configuration ==="
+echo "Cluster type: $CLUSTER_TYPE"
+echo "Profile name: $PROFILE_NAME"
+echo "Target node: $TARGET_NODE"
+
 # Create a new test configuration for the tuned cluster
-cat > tuned-config.yml << 'EOF'
+cat > tuned-config.yml << EOF
 global:
   measurements:
     - name: podLatency
@@ -296,8 +812,22 @@ jobs:
           containerImage: registry.redhat.io/ubi8/ubi:latest
 EOF
 
-# Create a tuned pod template that can be scheduled on isolated CPUs
-cat > tuned-pod.yml << 'EOF'
+# Create a tuned pod template with appropriate node selector
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    NODE_SELECTOR_YAML='nodeSelector:
+    node-role.kubernetes.io/master: ""'
+    echo "📝 SNO: Using master node selector for pod placement"
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    NODE_SELECTOR_YAML='nodeSelector:
+    node-role.kubernetes.io/worker-rt: ""'
+    echo "📝 Multi-Node: Using worker-rt node selector for pod placement"
+else
+    NODE_SELECTOR_YAML='nodeSelector:
+    node-role.kubernetes.io/master-rt: ""'
+    echo "📝 Multi-Master: Using master-rt node selector for pod placement"
+fi
+
+cat > tuned-pod.yml << EOF
 apiVersion: v1
 kind: Pod
 metadata:
@@ -305,9 +835,9 @@ metadata:
   labels:
     app: tuned-test
     iteration: "{{.Iteration}}"
+    cluster-type: "$CLUSTER_TYPE"
 spec:
-  nodeSelector:
-    node-role.kubernetes.io/worker-rt: ""
+  $NODE_SELECTOR_YAML
   containers:
   - name: tuned-container
     image: {{.containerImage}}
@@ -323,105 +853,344 @@ spec:
   restartPolicy: Never
 EOF
 
+echo ""
+echo "🚀 Running Performance Test on Tuned Cluster"
+echo "   - Test configuration: tuned-config.yml"
+echo "   - Pod template: tuned-pod.yml"
+echo "   - Target: $CLUSTER_TYPE cluster with $PROFILE_NAME"
+echo ""
+
 # Run the performance test
 kube-burner init -c tuned-config.yml --log-level=info
+
+echo ""
+echo "✅ Tuned performance test completed!"
+echo "📊 Results stored in: collected-metrics-tuned/"
 ----
 
-. Analyze the tuned performance results:
+. Analyze the tuned performance results using Python script:
 +
 [source,bash,role=execute]
 ----
-# Analyze the tuned test results using modern approach
 cd ~/kube-burner-configs
 
-# Check if tuned metrics were collected successfully
-if [ -d "collected-metrics-tuned" ]; then
-    echo "✅ Tuned metrics collected successfully!"
-    echo ""
+echo "🔍 Analyzing tuned performance results..."
+echo ""
 
-    # View the tuned pod latency quantiles
-    echo "=== Tuned Pod Latency Summary ==="
-    find collected-metrics-tuned/ -name "*podLatencyQuantilesMeasurement*" -type f | head -1 | xargs cat | jq -r '.[] | select(.quantileName != null) | "\(.quantileName): P99=\(.P99)ms, P95=\(.P95)ms, P50=\(.P50)ms, Avg=\(.avg)ms, Max=\(.max)ms"' | sort
+# Use Python script for clean, color-coded analysis
+python3 ~/low-latency-performance-workshop/scripts/analyze-performance.py --single collected-metrics-tuned
+
+echo ""
+echo "✅ Tuned performance analysis completed!"
+echo ""
+echo "💡 The enhanced analysis provides:"
+echo "   � Educational context explaining what each metric means"
+echo "   🎯 Performance explanations (why some metrics are slower)"
+echo "   🚀 Color-coded results: Excellent/Good/Needs Attention"
+echo "   📋 Suggested next steps based on your results"
+----
+
+. Compare results with your baseline using Python analysis:
++
+[source,bash,role=execute]
+----
+cd ~/kube-burner-configs
+
+echo "📊 Comparing baseline vs tuned performance..."
+echo ""
+
+# Use module-specific analysis script for clean Module 4 results
+echo "🎯 Module 4 Focused Analysis (Container Performance Only)..."
+python3 ~/low-latency-performance-workshop/scripts/module-specific-analysis.py 4
+
+echo ""
+echo "📄 Generating Module 4 Performance Report..."
+echo "   🎯 Focus: Container performance optimization (baseline vs tuned)"
+echo "   📊 Scope: CPU isolation and HugePages impact on pod startup"
+echo ""
+
+# Generate Module 4 specific markdown report (baseline vs tuned only)
+REPORT_FILE="module4-performance-comparison-$(date +%Y%m%d-%H%M).md"
+python3 ~/low-latency-performance-workshop/scripts/analyze-performance.py \
+    --baseline collected-metrics \
+    --tuned collected-metrics-tuned \
+    --report "$REPORT_FILE"
+
+echo ""
+echo "💡 Module 4 Analysis Scope:"
+echo "   ✅ Baseline container performance (from Module 3)"
+echo "   ✅ Tuned container performance (from Module 4)"
+echo "   ⚠️  Note: If VMI data exists from Module 5, it will also be shown"
+echo "   🎯 Focus on the 'Performance Comparison' section for Module 4 results"
+echo "   ℹ️  Comprehensive analysis across all modules happens in Module 6"
+
+echo ""
+echo "📚 How to Read the Analysis:"
+echo "   1. Individual test sections show raw performance data"
+echo "   2. 'Performance Comparison' section shows Module 4 improvements"
+echo "   3. VMI data (if shown) is for reference - focus on container metrics"
+
+echo ""
+echo "📊 Performance Comparison Summary:"
+echo "=================================="
+if [ -f "$REPORT_FILE" ]; then
+    # Display key sections of the report
+    head -30 "$REPORT_FILE"
     echo ""
+    echo "📄 Full report available at: $REPORT_FILE"
 else
-    echo "❌ No tuned metrics directory found. Checking log output..."
-    LATEST_LOG=$(ls -t kube-burner-*.log | head -1)
-    echo "Latest log: $LATEST_LOG"
-    grep -E "(Ready|PodScheduled|ContainersReady|Initialized).*99th.*max.*avg" $LATEST_LOG || echo "No latency metrics found in log"
+    echo "⚠️  Report generation failed - check if both baseline and tuned metrics exist"
 fi
+
+echo ""
+echo "✅ Performance comparison completed!"
+echo ""
+echo "💡 The comparison analysis explains:"
+echo "   � What P99/P95/P50 improvements mean for your workloads"
+echo "   🎯 Why scheduling became instant (0ms) with CPU isolation"
+echo "   ⚖️ Why container operations may be slower (expected trade-off)"
+echo "   🏆 Overall assessment of your performance tuning effectiveness"
 ----
 
-. Compare results with your baseline:
+=== Step 7: Validate kube-burner Test Pods and Cluster Stability
+
+Before proceeding, let's validate that our performance tuning doesn't interfere with normal cluster operations and that kube-burner can successfully create and schedule pods.
+
+. Check the status of kube-burner test pods:
 +
 [source,bash,role=execute]
 ----
-# Create comprehensive performance comparison report
-cd ~/kube-burner-configs
+# Load cluster configuration
+source /tmp/cluster-config
 
-# Extract baseline metrics
-BASELINE_READY_AVG=$(cat collected-metrics/podLatencyQuantilesMeasurement-baseline-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .avg' 2>/dev/null || echo "N/A")
-BASELINE_READY_P99=$(cat collected-metrics/podLatencyQuantilesMeasurement-baseline-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .P99' 2>/dev/null || echo "N/A")
+echo "=== Validating kube-burner Test Pod Scheduling ==="
+echo "Cluster type: $CLUSTER_TYPE"
+echo "Target node: $TARGET_NODE"
 
-# Extract tuned metrics
-TUNED_READY_AVG=$(cat collected-metrics-tuned/podLatencyQuantilesMeasurement-tuned-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .avg' 2>/dev/null || echo "N/A")
-TUNED_READY_P99=$(cat collected-metrics-tuned/podLatencyQuantilesMeasurement-tuned-workload.json | jq -r '.[] | select(.quantileName == "Ready") | .P99' 2>/dev/null || echo "N/A")
+# Check if tuned test pods were created successfully
+echo ""
+echo "📋 Tuned Test Pod Status:"
+TUNED_PODS=$(oc get pods -A -l app=tuned-test --no-headers 2>/dev/null | wc -l)
+if [ $TUNED_PODS -gt 0 ]; then
+    echo "   ✅ Found $TUNED_PODS tuned test pods"
+    echo ""
+    echo "   📊 Pod Distribution by Node:"
+    oc get pods -A -l app=tuned-test -o wide --no-headers | awk '{print $8}' | sort | uniq -c | sed 's/^/      /'
 
-# Create comparison report
-cat > performance-comparison-$(date +%Y%m%d).md << EOF
-# Performance Comparison Report - $(date)
+    echo ""
+    echo "   📊 Pod Status Summary:"
+    oc get pods -A -l app=tuned-test --no-headers | awk '{print $4}' | sort | uniq -c | sed 's/^/      /'
 
-## Test Configuration
-- **Baseline Test**: Standard pods on default worker nodes
-- **Tuned Test**: Pods scheduled on performance-tuned worker-rt nodes
-- **Performance Profile**: low-latency-profile applied
-
-## Results Comparison
-
-### Pod Ready Latency
-| Metric | Baseline | Tuned | Improvement |
-|--------|----------|-------|-------------|
-| **Average** | ${BASELINE_READY_AVG}ms | ${TUNED_READY_AVG}ms | $(if [ "$BASELINE_READY_AVG" != "N/A" ] && [ "$TUNED_READY_AVG" != "N/A" ]; then echo "scale=1; ($BASELINE_READY_AVG - $TUNED_READY_AVG) * 100 / $BASELINE_READY_AVG" | bc 2>/dev/null | sed 's/$/% faster/' || echo "TBD"; else echo "TBD"; fi) |
-| **P99** | ${BASELINE_READY_P99}ms | ${TUNED_READY_P99}ms | $(if [ "$BASELINE_READY_P99" != "N/A" ] && [ "$TUNED_READY_P99" != "N/A" ]; then echo "scale=1; ($BASELINE_READY_P99 - $TUNED_READY_P99) * 100 / $BASELINE_READY_P99" | bc 2>/dev/null | sed 's/$/% faster/' || echo "TBD"; else echo "TBD"; fi) |
-
-## Performance Optimizations Applied
-- ✅ **CPU Isolation**: Dedicated CPUs for workloads
-- ✅ **HugePages**: Reduced memory latency
-- ✅ **Real-time Kernel**: Deterministic scheduling
-- ✅ **Node Selector**: Workloads on tuned nodes
-
-## Key Insights
-EOF
-
-# Add insights based on results
-if [ "$BASELINE_READY_AVG" != "N/A" ] && [ "$TUNED_READY_AVG" != "N/A" ]; then
-    if [ "$TUNED_READY_AVG" -lt "$BASELINE_READY_AVG" ]; then
-        echo "- ✅ **Performance Improved**: Tuned configuration shows better latency" >> performance-comparison-$(date +%Y%m%d).md
-    else
-        echo "- ⚠️ **Performance Similar**: Results may vary based on cluster load and hardware" >> performance-comparison-$(date +%Y%m%d).md
+    # Check for any failed pods
+    FAILED_PODS=$(oc get pods -A -l app=tuned-test --no-headers | grep -v "Running\|Completed" | wc -l)
+    if [ $FAILED_PODS -gt 0 ]; then
+        echo ""
+        echo "   ⚠️  Found $FAILED_PODS pods not in Running/Completed state:"
+        oc get pods -A -l app=tuned-test --no-headers | grep -v "Running\|Completed" | sed 's/^/      /'
     fi
 else
-    echo "- 📊 **Analysis Pending**: Complete both tests to see comparison" >> performance-comparison-$(date +%Y%m%d).md
+    echo "   ⚠️  No tuned test pods found - this may indicate scheduling issues"
 fi
 
-echo "- 🎯 **Next Steps**: Use these optimized settings for production workloads" >> performance-comparison-$(date +%Y%m%d).md
+# Check baseline test pods as well
+echo ""
+echo "📋 Baseline Test Pod Status:"
+BASELINE_PODS=$(oc get pods -A -l app=baseline-test --no-headers 2>/dev/null | wc -l)
+if [ $BASELINE_PODS -gt 0 ]; then
+    echo "   ✅ Found $BASELINE_PODS baseline test pods"
+    echo "   📊 Baseline Pod Status Summary:"
+    oc get pods -A -l app=baseline-test --no-headers | awk '{print $4}' | sort | uniq -c | sed 's/^/      /'
+else
+    echo "   ℹ️  No baseline test pods found (may have been cleaned up)"
+fi
+----
 
-# Display the report
-echo "📊 Performance Comparison Report:"
-echo "=================================="
-cat performance-comparison-$(date +%Y%m%d).md
+. Test cluster responsiveness and pod scheduling:
++
+[source,bash,role=execute]
+----
+# Load cluster configuration
+source /tmp/cluster-config
 
-echo "BASELINE RESULTS:" >> ~/performance-comparison.txt
-cat ~/baseline-results.txt | grep -A 10 "Pod Creation Latency" >> ~/performance-comparison.txt
+echo "=== Testing Cluster Responsiveness ==="
 
-echo "" >> ~/performance-comparison.txt
-echo "AFTER TUNING RESULTS:" >> ~/performance-comparison.txt
+# Create a simple test pod to verify scheduling works
+echo "🧪 Creating test pod to verify cluster functionality..."
 
-# Extract metrics from new test
-if [ -f collected-metrics/podLatency*.json ]; then
-    cat collected-metrics/podLatency*.json | jq -r '.[] | select(.quantileName != null) | "\(.quantileName): \(.value)ms"' >> ~/performance-comparison.txt
+cat << EOF | oc apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cluster-health-test
+  namespace: default
+  labels:
+    app: cluster-health-test
+spec:
+  containers:
+  - name: test-container
+    image: registry.redhat.io/ubi8/ubi-minimal:latest
+    command: ["sleep"]
+    args: ["60"]
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+  restartPolicy: Never
+EOF
+
+# Wait for pod to be scheduled and running
+echo "⏱️  Waiting for test pod to start..."
+oc wait --for=condition=Ready pod/cluster-health-test --timeout=60s -n default
+
+if [ $? -eq 0 ]; then
+    echo "   ✅ Test pod started successfully - cluster is responsive"
+
+    # Check which node it was scheduled on
+    TEST_POD_NODE=$(oc get pod cluster-health-test -n default -o jsonpath='{.spec.nodeName}')
+    echo "   📍 Test pod scheduled on node: $TEST_POD_NODE"
+
+    # Clean up test pod
+    oc delete pod cluster-health-test -n default --ignore-not-found=true
+else
+    echo "   ❌ Test pod failed to start - cluster may have scheduling issues"
+    echo "   🔍 Pod events:"
+    oc describe pod cluster-health-test -n default | grep -A 10 "Events:" | sed 's/^/      /'
+fi
+----
+
+=== Step 8: Optional - Revert Performance Tuning for Workshop Stability
+
+If you experience any issues with cluster stability or want to continue with other workshop modules without the aggressive performance tuning, you can revert the changes.
+
+. Create a revert script for easy cleanup:
++
+[source,bash,role=execute]
+----
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Creating Performance Tuning Revert Script ==="
+
+# Create revert script
+cat > ~/revert-performance-tuning.sh << 'EOF'
+#!/bin/bash
+
+# Load cluster configuration
+if [ -f /tmp/cluster-config ]; then
+    source /tmp/cluster-config
+    echo "=== Reverting Performance Tuning ==="
+    echo "Cluster type: $CLUSTER_TYPE"
+    echo "Profile name: $PROFILE_NAME"
+    echo "Target node: $TARGET_NODE"
+else
+    echo "❌ Cluster configuration not found. Cannot revert automatically."
+    echo "💡 You can manually delete performance profiles with:"
+    echo "   oc get performanceprofile"
+    echo "   oc delete performanceprofile <profile-name>"
+    exit 1
 fi
 
-cat ~/performance-comparison.txt
+# Delete the Performance Profile
+echo ""
+echo "🗑️  Removing Performance Profile: $PROFILE_NAME"
+if oc get performanceprofile $PROFILE_NAME >/dev/null 2>&1; then
+    oc delete performanceprofile $PROFILE_NAME
+    echo "   ✅ Performance Profile deleted"
+else
+    echo "   ℹ️  Performance Profile not found (may already be deleted)"
+fi
+
+# Remove custom Machine Config Pool (if created)
+if [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo ""
+    echo "🗑️  Removing worker-rt Machine Config Pool..."
+    if oc get mcp worker-rt >/dev/null 2>&1; then
+        oc delete mcp worker-rt
+        echo "   ✅ worker-rt Machine Config Pool deleted"
+    else
+        echo "   ℹ️  worker-rt Machine Config Pool not found"
+    fi
+
+    # Remove worker-rt label from nodes
+    echo ""
+    echo "🏷️  Removing worker-rt labels from nodes..."
+    oc label nodes -l node-role.kubernetes.io/worker-rt node-role.kubernetes.io/worker-rt- --ignore-not-found=true
+
+elif [ "$CLUSTER_TYPE" = "MULTI_MASTER" ]; then
+    echo ""
+    echo "🗑️  Removing master-rt Machine Config Pool..."
+    if oc get mcp master-rt >/dev/null 2>&1; then
+        oc delete mcp master-rt
+        echo "   ✅ master-rt Machine Config Pool deleted"
+    else
+        echo "   ℹ️  master-rt Machine Config Pool not found"
+    fi
+
+    # Remove master-rt label from nodes
+    echo ""
+    echo "🏷️  Removing master-rt labels from nodes..."
+    oc label nodes -l node-role.kubernetes.io/master-rt node-role.kubernetes.io/master-rt- --ignore-not-found=true
+fi
+
+echo ""
+echo "⏳ Waiting for nodes to revert to standard kernel..."
+echo "   💡 This process will take 10-15 minutes as nodes reboot"
+echo "   📊 Monitor progress with: watch 'oc get nodes; oc get mcp'"
+
+# Wait for machine config pools to be updated
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    echo "   🔄 Waiting for master MCP to update..."
+    oc wait --for=condition=Updated mcp/master --timeout=1200s
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo "   🔄 Waiting for worker MCP to update..."
+    oc wait --for=condition=Updated mcp/worker --timeout=1200s
+else
+    echo "   🔄 Waiting for master MCP to update..."
+    oc wait --for=condition=Updated mcp/master --timeout=1200s
+fi
+
+echo ""
+echo "✅ Performance tuning revert completed!"
+echo "🔍 Verify with: oc debug node/$TARGET_NODE -- chroot /host uname -r"
+echo "   (Should show standard kernel without 'rt')"
+
+EOF
+
+chmod +x ~/revert-performance-tuning.sh
+
+echo "✅ Revert script created: ~/revert-performance-tuning.sh"
+echo ""
+echo "💡 To revert performance tuning later, run:"
+echo "   ~/revert-performance-tuning.sh"
+echo ""
+echo "⚠️  Note: Reverting will cause nodes to reboot back to standard kernel"
+----
+
+. Optional - Run the revert script if needed:
++
+[source,bash,role=execute]
+----
+echo "=== Performance Tuning Revert Decision ==="
+echo ""
+echo "🤔 Do you want to revert the performance tuning now?"
+echo ""
+echo "✅ Keep Performance Tuning if:"
+echo "   - Cluster is stable and responsive"
+echo "   - Test pods are scheduling successfully"
+echo "   - You want to continue with optimized performance"
+echo ""
+echo "🔄 Revert Performance Tuning if:"
+echo "   - Experiencing cluster stability issues"
+echo "   - Pods are failing to schedule"
+echo "   - Want to continue workshop with standard settings"
+echo ""
+echo "💡 You can always re-apply performance tuning later by re-running this module"
+echo ""
+echo "To revert now, run: ~/revert-performance-tuning.sh"
+echo "To keep current settings, continue to the next step"
 ----
 
 === Expected Improvements
@@ -430,7 +1199,7 @@ With proper performance tuning, you should see significant improvements:
 
 .*Typical Improvements*
 * *Pod Creation P99*: 50-70% reduction in latency
-* *Pod Creation P95*: 40-60% reduction in latency  
+* *Pod Creation P95*: 40-60% reduction in latency
 * *Consistency*: Much lower variance between P50 and P99
 * *Jitter Reduction*: More predictable response times
 
@@ -442,55 +1211,342 @@ With proper performance tuning, you should see significant improvements:
 
 == Troubleshooting Common Issues
 
-.*Node Not Updating*
-If the worker node doesn't start updating:
-[source,bash]
-----
-# Check machine config pool status
-oc describe mcp worker-rt
+This section provides architecture-specific troubleshooting guidance for common Performance Profile issues.
 
-# Check for conflicting machine configs
-oc get mc | grep worker-rt
+=== Architecture-Specific Troubleshooting
+
+.*Node Not Updating*
+If nodes don't start updating after Performance Profile creation:
+
+[source,bash,role=execute]
+----
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Node Update Troubleshooting ==="
+echo "Cluster type: $CLUSTER_TYPE"
+echo "Target node: $TARGET_NODE"
+
+if [ "$CLUSTER_TYPE" = "SNO" ]; then
+    echo ""
+    echo "🔍 SNO Troubleshooting:"
+    echo "   - Check master Machine Config Pool status"
+    oc describe mcp master | grep -A 10 -B 5 "Conditions:"
+
+    echo ""
+    echo "   - Check for conflicting machine configs:"
+    oc get mc | grep master
+
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo ""
+    echo "🔍 Multi-Node Troubleshooting:"
+    echo "   - Check worker-rt Machine Config Pool status"
+    oc describe mcp worker-rt | grep -A 10 -B 5 "Conditions:"
+
+    echo ""
+    echo "   - Check for conflicting machine configs:"
+    oc get mc | grep worker-rt
+
+else
+    echo ""
+    echo "🔍 Multi-Master Troubleshooting:"
+    echo "   - Check master-rt Machine Config Pool status"
+    oc describe mcp master-rt | grep -A 10 -B 5 "Conditions:"
+
+    echo ""
+    echo "   - Check for conflicting machine configs:"
+    oc get mc | grep master-rt
+fi
+
+echo ""
+echo "📋 Performance Profile Status:"
+oc describe performanceprofile $PROFILE_NAME | grep -A 10 -B 5 "Status:"
 ----
 
 .*Real-time Kernel Issues*
 If the RT kernel fails to install:
-[source,bash]
-----
-# Check node events for errors
-oc get events --sort-by='.lastTimestamp' | grep $NODE_NAME
 
-# Verify RT kernel packages are available
-oc debug node/$NODE_NAME -- chroot /host yum list kernel-rt
+[source,bash,role=execute]
+----
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Real-Time Kernel Troubleshooting ==="
+echo "Target node: $TARGET_NODE"
+
+# Check node events for errors
+echo "📋 Recent Node Events:"
+oc get events --sort-by='.lastTimestamp' --field-selector involvedObject.name=$TARGET_NODE | tail -15
+
+echo ""
+echo "📋 Machine Config Daemon Logs:"
+MCD_POD=$(oc get pods -n openshift-machine-config-operator -l k8s-app=machine-config-daemon --field-selector spec.nodeName=$TARGET_NODE -o jsonpath='{.items[0].metadata.name}')
+if [ -n "$MCD_POD" ]; then
+    echo "   MCD Pod: $MCD_POD"
+    oc logs -n openshift-machine-config-operator $MCD_POD --tail=20
+else
+    echo "   ❌ No MCD pod found for node $TARGET_NODE"
+fi
+
+echo ""
+echo "📋 RT Kernel Package Availability:"
+oc debug node/$TARGET_NODE -- chroot /host sh -c 'yum list available | grep kernel-rt || dnf list available | grep kernel-rt' 2>/dev/null || echo "   Unable to check RT kernel packages"
+
+echo ""
+echo "📋 Current Kernel Information:"
+oc debug node/$TARGET_NODE -- chroot /host uname -a 2>/dev/null || echo "   Unable to check current kernel"
 ----
 
 .*HugePages Not Allocated*
 If HugePages aren't configured correctly:
-[source,bash]
-----
-# Check if sufficient memory is available
-oc debug node/$NODE_NAME -- chroot /host free -h
 
-# Verify HugePages mount points
-oc debug node/$NODE_NAME -- chroot /host mount | grep huge
+[source,bash,role=execute]
+----
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== HugePages Troubleshooting ==="
+echo "Target node: $TARGET_NODE"
+
+# Check available memory
+echo "📋 Memory Information:"
+oc debug node/$TARGET_NODE -- chroot /host free -h 2>/dev/null || echo "   Unable to check memory"
+
+echo ""
+echo "📋 HugePages Configuration:"
+oc debug node/$TARGET_NODE -- chroot /host cat /proc/meminfo 2>/dev/null | grep -i huge || echo "   No HugePages information found"
+
+echo ""
+echo "📋 HugePages Mount Points:"
+oc debug node/$TARGET_NODE -- chroot /host mount 2>/dev/null | grep huge || echo "   No HugePages mount points found"
+
+echo ""
+echo "📋 Kernel Command Line (HugePages args):"
+oc debug node/$TARGET_NODE -- chroot /host cat /proc/cmdline 2>/dev/null | grep -o 'hugepages[^[:space:]]*' || echo "   No HugePages kernel arguments found"
+
+echo ""
+echo "📋 Performance Profile HugePages Spec:"
+oc get performanceprofile $PROFILE_NAME -o jsonpath='{.spec.hugepages}' | jq '.' 2>/dev/null || echo "   Unable to read Performance Profile HugePages spec"
+----
+
+.*Performance Profile Not Applied*
+If the Performance Profile exists but optimizations aren't applied:
+
+[source,bash,role=execute]
+----
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Performance Profile Application Troubleshooting ==="
+
+# Check Performance Profile status
+echo "📋 Performance Profile Status:"
+oc get performanceprofile $PROFILE_NAME -o yaml | grep -A 20 "status:" || echo "   No status information available"
+
+echo ""
+echo "📋 Node Tuning Operator Status:"
+oc get pods -n openshift-cluster-node-tuning-operator
+
+echo ""
+echo "📋 TuneD Daemon Status:"
+TUNED_POD=$(oc get pods -n openshift-cluster-node-tuning-operator -l openshift-app=tuned --field-selector spec.nodeName=$TARGET_NODE -o jsonpath='{.items[0].metadata.name}')
+if [ -n "$TUNED_POD" ]; then
+    echo "   TuneD Pod: $TUNED_POD"
+    oc logs -n openshift-cluster-node-tuning-operator $TUNED_POD --tail=10
+else
+    echo "   ❌ No TuneD pod found for node $TARGET_NODE"
+fi
+
+echo ""
+echo "📋 Generated TuneD Profiles:"
+oc get tuned -n openshift-cluster-node-tuning-operator
 ----
 
 == Module Summary
 
-In this module, you have:
+In this module, you have successfully implemented architecture-aware performance tuning:
 
-✅ *Created* a Performance Profile for comprehensive low-latency tuning +
-✅ *Configured* CPU isolation to dedicate cores for high-performance workloads +
-✅ *Allocated* HugePages to reduce memory management overhead +
+✅ *Detected* your cluster architecture (SNO, Multi-Node, or Multi-Master) +
+✅ *Created* an optimized Performance Profile tailored to your environment +
+✅ *Configured* CPU isolation appropriate for your cluster's control plane needs +
+✅ *Allocated* HugePages sized correctly for your available resources +
 ✅ *Applied* real-time kernel settings for deterministic scheduling +
-✅ *Measured* significant performance improvements through testing
+✅ *Verified* all performance optimizations are working correctly +
+✅ *Measured* significant performance improvements through comparative testing
+
+.*Architecture-Specific Achievements*
+
+**Single Node OpenShift (SNO):**
+* Conservative CPU allocation preserving control plane stability
+* Optimized HugePages configuration for resource-constrained environments
+* Master node targeting with appropriate performance isolation
+
+**Multi-Node Clusters:**
+* Aggressive CPU isolation on dedicated worker nodes
+* Maximum performance optimization without control plane impact
+* Dedicated Machine Config Pool for isolated performance tuning
+
+**Multi-Master Clusters:**
+* Balanced CPU allocation for control plane and workload performance
+* Strategic node selection for performance optimization
+* Maintained cluster stability during rolling updates
 
 .*Key Takeaways*
-* Performance Profiles provide declarative, comprehensive tuning
-* CPU isolation eliminates interference from system processes  
-* Real-time kernels provide predictable, low-latency scheduling
-* HugePages reduce memory management overhead for large allocations
-* Proper tuning can achieve 50-70% latency improvements
+* Performance Profiles adapt automatically to different cluster architectures
+* CPU isolation strategies must account for control plane requirements
+* Real-time kernels provide predictable, low-latency scheduling across all architectures
+* HugePages allocation should be sized appropriately for available resources
+* Proper architecture-aware tuning can achieve 50-70% latency improvements
+* SNO environments can achieve exceptional performance due to simplified architecture
+
+.*Performance Impact Summary*
+Based on your cluster type, you should observe:
+* **Pod Creation Latency**: 50-70% reduction in P99 times
+* **Consistency**: Dramatically reduced variance between P50 and P99
+* **Jitter**: More predictable and deterministic response times
+* **Resource Utilization**: Optimized CPU and memory usage patterns
+
+== Optional: Reverting Performance Tuning for Workshop Continuation
+
+If you need to revert the performance tuning to continue with other workshop modules or if you experience any cluster stability issues, you can easily remove the performance optimizations.
+
+=== Creating a Revert Script
+
+. Create an automated revert script:
++
+[source,bash,role=execute]
+----
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Creating Performance Tuning Revert Script ==="
+
+# Create revert script
+cat > ~/revert-performance-tuning.sh << 'EOF'
+#!/bin/bash
+
+# Load cluster configuration
+if [ -f /tmp/cluster-config ]; then
+    source /tmp/cluster-config
+    echo "=== Reverting Performance Tuning ==="
+    echo "Cluster type: $CLUSTER_TYPE"
+    echo "Profile name: $PROFILE_NAME"
+    echo "Target node: $TARGET_NODE"
+else
+    echo "❌ Cluster configuration not found. Attempting manual cleanup..."
+    PROFILE_NAME=$(oc get performanceprofile -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    if [ -z "$PROFILE_NAME" ]; then
+        echo "No Performance Profiles found to delete."
+        exit 0
+    fi
+fi
+
+# Delete the Performance Profile
+echo ""
+echo "🗑️  Removing Performance Profile: $PROFILE_NAME"
+if oc get performanceprofile $PROFILE_NAME >/dev/null 2>&1; then
+    oc delete performanceprofile $PROFILE_NAME
+    echo "   ✅ Performance Profile deleted"
+else
+    echo "   ℹ️  Performance Profile not found (may already be deleted)"
+fi
+
+# Remove custom Machine Config Pool and labels (if created)
+if [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo ""
+    echo "🗑️  Cleaning up worker-rt configuration..."
+    oc delete mcp worker-rt --ignore-not-found=true
+    oc label nodes -l node-role.kubernetes.io/worker-rt node-role.kubernetes.io/worker-rt- --ignore-not-found=true
+    echo "   ✅ Worker-rt configuration cleaned up"
+
+elif [ "$CLUSTER_TYPE" = "MULTI_MASTER" ]; then
+    echo ""
+    echo "🗑️  Cleaning up master-rt configuration..."
+    oc delete mcp master-rt --ignore-not-found=true
+    oc label nodes -l node-role.kubernetes.io/master-rt node-role.kubernetes.io/master-rt- --ignore-not-found=true
+    echo "   ✅ Master-rt configuration cleaned up"
+fi
+
+echo ""
+echo "⏳ Waiting for nodes to revert to standard kernel..."
+echo "   💡 This process will take 10-15 minutes as nodes reboot"
+echo "   📊 Monitor progress with: watch 'oc get nodes; oc get mcp'"
+
+# Wait for machine config pools to be updated
+if [ "$CLUSTER_TYPE" = "SNO" ] || [ "$CLUSTER_TYPE" = "MULTI_MASTER" ]; then
+    echo "   🔄 Waiting for master MCP to update..."
+    oc wait --for=condition=Updated mcp/master --timeout=1200s
+elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
+    echo "   🔄 Waiting for worker MCP to update..."
+    oc wait --for=condition=Updated mcp/worker --timeout=1200s
+fi
+
+echo ""
+echo "✅ Performance tuning revert completed!"
+echo "🔍 Verify standard kernel with:"
+echo "   oc debug node/\$(oc get nodes -o jsonpath='{.items[0].metadata.name}') -- chroot /host uname -r"
+echo "   (Should show standard kernel without 'rt')"
+
+EOF
+
+chmod +x ~/revert-performance-tuning.sh
+
+echo "✅ Revert script created: ~/revert-performance-tuning.sh"
+echo ""
+echo "💡 To revert performance tuning at any time, run:"
+echo "   ~/revert-performance-tuning.sh"
+echo ""
+echo "⚠️  Note: Reverting will cause nodes to reboot back to standard kernel"
+----
+
+=== When to Use the Revert Script
+
+.*Revert Performance Tuning if you experience:*
+* Pods failing to schedule or start
+* Cluster becoming unresponsive
+* High resource contention
+* Need to continue with other workshop modules that require standard settings
+
+.*Keep Performance Tuning if:*
+* Cluster is stable and responsive
+* Test pods are scheduling successfully
+* You want to continue with performance-optimized settings
+* Planning to proceed directly to Module 5 (Virtualization)
+
+=== Manual Cleanup (Alternative)
+
+If the automated script doesn't work, you can manually clean up:
+
+[source,bash,role=execute]
+----
+# Manual cleanup commands
+echo "=== Manual Performance Tuning Cleanup ==="
+
+# List and delete performance profiles
+echo "📋 Current Performance Profiles:"
+oc get performanceprofile
+
+echo ""
+echo "🗑️  Delete Performance Profile:"
+echo "oc delete performanceprofile <profile-name>"
+
+# List and delete custom MCPs
+echo ""
+echo "📋 Current Machine Config Pools:"
+oc get mcp
+
+echo ""
+echo "🗑️  Delete custom MCP (if created):"
+echo "oc delete mcp worker-rt  # or master-rt"
+
+echo ""
+echo "💡 After deletion, nodes will automatically reboot to standard kernel"
+----
 
 .*Next Steps*
-In Module 4, you will learn how to apply these performance optimizations to OpenShift Virtualization, creating high-performance virtual machines that can achieve near bare-metal latency characteristics.
+In Module 5, you will learn how to apply these performance optimizations to OpenShift Virtualization, creating high-performance virtual machines that leverage your tuned infrastructure to achieve near bare-metal latency characteristics. The architecture-aware approach you've learned will be essential for optimizing VM placement and resource allocation.
+
+[NOTE]
+====
+**Workshop Flexibility**: You can proceed to Module 5 either with or without the performance tuning active. The virtualization module will adapt to your current cluster configuration.
+====

@@ -346,37 +346,90 @@ antora antora-playbook-aws.yml
 
 ## Development Setup
 
-### Prerequisites
+### Quick Start for New Developers
 
-1. **Local Development Environment**:
-   - Node.js 16+ (for Antora)
-   - Git
-   - Text editor with AsciiDoc support
-
-2. **OpenShift Access**:
-   - OpenShift CLI (`oc`)
-   - Cluster admin access for testing
-   - kube-burner CLI for performance testing
-
-3. **Workshop Environment**:
-   - Access to workshop bastion host
-   - OpenShift cluster with performance features enabled
-
-### Local Documentation Development
+We provide an automated setup script that configures your development environment:
 
 ```bash
 # Clone the repository
 git clone https://github.com/tosin2013/low-latency-performance-workshop.git
 cd low-latency-performance-workshop
 
+# Run the developer setup script
+./scripts/developer-setup.sh
+```
+
+The setup script will:
+- ✅ Check for required tools (git, node, npm, python3)
+- ✅ Install optional tools (yamllint, asciidoctor, markdownlint)
+- ✅ Install Node.js dependencies
+- ✅ Configure git hooks for automatic document validation
+- ✅ Create local development configuration
+- ✅ Display next steps and useful commands
+
+### Prerequisites
+
+1. **Local Development Environment**:
+   - Node.js 16+ (for Antora)
+   - Git
+   - Python 3.x
+   - Text editor with AsciiDoc support
+
+2. **Optional but Recommended**:
+   - `asciidoctor` - For AsciiDoc validation
+   - `yamllint` - For YAML validation (required for pre-commit hooks)
+   - `markdownlint` - For Markdown validation
+   - OpenShift CLI (`oc`) - For testing
+
+3. **OpenShift Access** (for testing):
+   - OpenShift CLI (`oc`)
+   - Cluster admin access for testing
+   - kube-burner CLI for performance testing
+
+4. **Workshop Environment** (for testing):
+   - Access to workshop bastion host
+   - OpenShift cluster with performance features enabled
+
+### Manual Setup
+
+If you prefer to set up manually or the automated script doesn't work:
+
+```bash
+# Clone the repository
+git clone https://github.com/tosin2013/low-latency-performance-workshop.git
+cd low-latency-performance-workshop
+
+# Install Node.js dependencies
+npm install
+
+# Install validation tools
+pip3 install --user yamllint
+gem install asciidoctor
+npm install -g markdownlint-cli
+
+# Configure git hooks
+git config core.hooksPath .githooks
+chmod +x .githooks/*
+chmod +x scripts/*.sh
+
 # Install Antora (if not already installed)
 npm install -g @antora/cli @antora/site-generator-default
+```
 
+### Local Documentation Development
+
+```bash
 # Generate documentation locally
-antora antora-playbook.yml
+make build
 
-# Serve documentation locally (if using local server)
-cd build/site && python3 -m http.server 8080
+# Serve documentation locally
+make serve
+
+# Or manually:
+antora default-site.yml
+
+# Serve with Python
+cd www && python3 -m http.server 8080
 ```
 
 ### Testing Workshop Content
@@ -390,15 +443,114 @@ cd gitops/kube-burner-configs
 oc apply --dry-run=client -k gitops/openshift-virtualization/operator/overlays/sno
 ```
 
+### Document Validation
+
+The repository includes automated document validation to ensure quality and consistency.
+
+#### Pre-commit Hooks
+
+Pre-commit hooks automatically validate documents before allowing commits:
+
+```bash
+# Hooks are configured automatically by developer-setup.sh
+# Or configure manually:
+git config core.hooksPath .githooks
+
+# Make changes and commit - validation runs automatically
+git add content/modules/ROOT/pages/module-01-low-latency-intro.adoc
+git commit -m "Update module 01"
+```
+
+**What gets validated:**
+- ✅ **YAML files**: Syntax and structure validation with yamllint
+- ✅ **AsciiDoc files**: Syntax, heading hierarchy, and formatting with asciidoctor
+- ✅ **Markdown files**: Syntax and formatting with markdownlint
+
+**Bypassing validation** (not recommended):
+```bash
+git commit --no-verify -m "Skip validation"
+```
+
+#### Manual Validation
+
+You can validate documents manually at any time:
+
+```bash
+# Validate all documents
+./scripts/validate-documents.sh
+
+# Validate specific files
+./scripts/validate-documents.sh content/modules/ROOT/pages/module-01-low-latency-intro.adoc
+
+# Validate multiple files
+./scripts/validate-documents.sh file1.adoc file2.yaml file3.md
+```
+
+#### Validation Requirements
+
+**Required tools:**
+- `python3` - For YAML parsing
+- `yamllint` - For YAML validation
+
+**Optional but recommended:**
+- `asciidoctor` - For comprehensive AsciiDoc validation
+- `markdownlint` or `mdl` - For Markdown validation
+
+Install with:
+```bash
+# RHEL/Fedora
+pip3 install --user yamllint
+sudo dnf install rubygem-asciidoctor
+npm install -g markdownlint-cli
+
+# Ubuntu/Debian
+pip3 install --user yamllint
+sudo apt-get install asciidoctor
+npm install -g markdownlint-cli
+
+# macOS
+pip3 install yamllint
+brew install asciidoctor
+npm install -g markdownlint-cli
+```
+
 ## Contributing Guidelines
 
 ### Content Contribution Process
 
 1. **Fork and Clone**: Fork the repository and create a feature branch
-2. **Content Development**: Follow AsciiDoc best practices
-3. **Testing**: Validate content with actual workshop environment
-4. **Documentation**: Update this developer guide if needed
-5. **Pull Request**: Submit PR with clear description of changes
+2. **Development Setup**: Run `./scripts/developer-setup.sh` to configure your environment
+3. **Content Development**: Follow AsciiDoc best practices (see below)
+4. **Validation**: Documents are validated automatically on commit
+5. **Testing**: Validate content with actual workshop environment
+6. **Documentation**: Update this developer guide if needed
+7. **Pull Request**: Submit PR with clear description of changes
+
+### Git Workflow
+
+```bash
+# Create a feature branch
+git checkout -b feature/update-module-01
+
+# Make your changes
+vim content/modules/ROOT/pages/module-01-low-latency-intro.adoc
+
+# Validate manually (optional - pre-commit hook will do this)
+./scripts/validate-documents.sh content/modules/ROOT/pages/module-01-low-latency-intro.adoc
+
+# Build and test locally
+make clean-build
+make serve
+
+# Commit changes (validation runs automatically)
+git add content/modules/ROOT/pages/module-01-low-latency-intro.adoc
+git commit -m "Update module 01: Add new performance tuning section"
+
+# Push to your fork
+git push origin feature/update-module-01
+
+# Create pull request on GitHub
+```
 
 ### AsciiDoc Style Guidelines
 
