@@ -12,7 +12,7 @@ spec:
     targetRevision: HEAD
     path: gitops/openshift-virtualization/instance
   destination:
-    server: https://api.cluster-gsq4q.dynamic.redhatworkshops.io:6443
+    server: https://api.cluster-nsfvh.dynamic.redhatworkshops.io:6443
     namespace: openshift-cnv
   syncPolicy:
     automated:
