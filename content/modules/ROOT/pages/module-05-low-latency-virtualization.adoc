@@ -104,21 +104,33 @@ oc get datasource -n openshift-virtualization-os-images | grep fedora
 +
 [source,bash,role=execute]
 ----
-  # Check if performance profile exists (from Module 4)
+# Check if performance profile exists (from Module 4)
 echo "--- Performance Profile Status ---"
 PERF_PROFILES=$(oc get performanceprofile --no-headers 2>/dev/null | wc -l)
 if [ "$PERF_PROFILES" -gt 0 ]; then
-    echo "Performance profile found:"
+    echo "✅ Performance profile found:"
     oc get performanceprofile -o custom-columns=NAME:.metadata.name,ISOLATED:.spec.cpu.isolated,RESERVED:.spec.cpu.reserved
 
-    # Check HugePages configuration if performance profile exists
+    # Get current HugePages from Performance Profile
     echo ""
-    echo "--- HugePages Status ---"
-    HUGEPAGES_OUTPUT=$(oc get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.status.allocatable.hugepages-1Gi}{"\n"}{end}' | grep -v ": 0$")
-    if [ -n "$HUGEPAGES_OUTPUT" ]; then
-        echo "$HUGEPAGES_OUTPUT"
+    echo "--- Current HugePages Configuration ---"
+    PROFILE_NAME=$(oc get performanceprofile -o jsonpath='{.items[0].metadata.name}')
+    HUGEPAGES_COUNT=$(oc get performanceprofile "$PROFILE_NAME" -o jsonpath='{.spec.hugepages.pages[0].count}' 2>/dev/null || echo "0")
+    echo "Performance Profile HugePages: ${HUGEPAGES_COUNT}GB"
+
+    if [ "$HUGEPAGES_COUNT" -lt 8 ]; then
+        echo ""
+        echo "⚠️  Current HugePages (${HUGEPAGES_COUNT}GB) may be insufficient for Module 5"
+        echo "   Module 4 allocates minimal HugePages (1GB) for demonstration"
+        echo "   Module 5 needs more HugePages to run multiple VMs"
+        echo ""
+        echo "💡 Recommended HugePages for Module 5:"
+        echo "   • SNO (64GB+ RAM): 8-16GB HugePages"
+        echo "   • Multi-Node (64GB+ RAM): 16-24GB HugePages"
+        echo ""
+        echo "   The next step will update HugePages automatically!"
     else
-        echo "No HugePages configured (all nodes show 0 HugePages)"
+        echo "✅ HugePages sufficient for Module 5 (${HUGEPAGES_COUNT}GB)"
     fi
 else
     echo "⚠️  No performance profile found"
@@ -136,6 +148,136 @@ else
     echo "   After completing Module 4, return here to see the performance difference!"
 fi
 ----
++
+[NOTE]
+====
+**Understanding HugePages Allocation:**
+
+* **Module 4**: Allocates 1GB HugePages (minimal for demonstration)
+* **Module 5**: Needs 8-16GB HugePages (for running multiple VMs)
+
+If you see "HugePages may be insufficient", don't worry! The next step will automatically update HugePages to the optimal amount for your cluster.
+
+**Why the difference?**
+
+* Module 4 focuses on demonstrating performance tuning concepts
+* Module 5 focuses on running actual VMs with realistic workloads
+* The scripts automatically handle the transition between modules
+====
+
+. Update HugePages allocation for VMI testing (if Performance Profile exists):
++
+[source,bash,role=execute]
+----
+# Update HugePages to support multiple VMs
+bash ~/low-latency-performance-workshop/scripts/module05-update-hugepages.sh
+----
++
+[TIP]
+====
+**What This Script Does:**
+
+* Detects current HugePages allocation from Module 4
+* Calculates optimal HugePages based on total memory and cluster type
+* **Accounts for VMI overhead**: Each VMI needs ~3GB (2GB guest + 1GB virt-launcher)
+* Updates Performance Profile if more HugePages are needed
+* Triggers node reboot if changes are required
+
+**Why Update HugePages?**
+
+Module 4 allocates minimal HugePages (1GB) for demonstration purposes. Module 5 needs more HugePages to run multiple VMs:
+
+* **1GB HugePages**: Only 1 small VM possible
+* **12GB HugePages**: 4 VMs with 2GB memory each
+* **24GB HugePages**: 8 VMs with 2GB memory each (Module 5 default test)
+* **32GB HugePages**: 10+ VMs with 2GB memory each
+
+**Updated Allocation Strategy:**
+
+* **SNO (125GB+ RAM)**: 24GB HugePages (~8 VMIs)
+* **SNO (64-128GB RAM)**: 24GB HugePages (~8 VMIs)
+* **SNO (32-64GB RAM)**: 12GB HugePages (~4 VMIs)
+* **Multi-Node (128GB+ worker)**: 48GB HugePages (~16 VMIs)
+* **Multi-Node (64-128GB worker)**: 32GB HugePages (~10 VMIs)
+
+The script automatically calculates the optimal allocation for your cluster!
+
+**If Node Reboots:**
+
+This is expected and required for HugePages changes. Wait 10-15 minutes for the node to come back online, then continue with the next step.
+
+**If No Performance Profile:**
+
+The script will inform you that no Performance Profile exists and suggest completing Module 4 first for enhanced VM performance.
+====
+
+. **Validate resources before testing** (Important learning step!):
++
+[source,bash,role=execute]
+----
+# Validate that your cluster has sufficient resources for VMI testing
+bash ~/low-latency-performance-workshop/scripts/module05-validate-vmi-resources.sh
+----
++
+[IMPORTANT]
+====
+**Why This Validation Step is Critical:**
+
+This is a **key learning opportunity** that demonstrates real-world capacity planning for virtualized workloads!
+
+**What You'll Learn:**
+
+* **Resource Calculation**: How to calculate VMI memory requirements including overhead
+* **Capacity Planning**: How many VMs your cluster can support
+* **Pre-Flight Validation**: Why validating resources before deployment prevents failures
+* **Troubleshooting**: How to identify and fix resource constraints
+
+**What the Script Validates:**
+
+1. **HugePages Availability**: Checks if sufficient HugePages are allocated
+2. **VMI Capacity**: Calculates max concurrent VMIs based on available resources
+3. **Test Scale Validation**: Verifies default test (10 VMIs) will succeed
+4. **CPU Isolation**: Validates sufficient isolated CPUs for dedicated placement
+5. **Recommendations**: Provides specific guidance if resources are insufficient
+
+**Understanding VMI Memory Requirements:**
+
+Each VMI requires more memory than just the guest allocation:
+
+```
+VMI Guest Memory:        2GB  (configured in VMI spec)
+virt-launcher overhead:  1GB  (KubeVirt management pod)
+────────────────────────────
+Total per VMI:           3GB
+```
+
+**Example Calculation:**
+
+```
+Default test: 10 VMIs × 3GB = 30GB required
+Your cluster: 16GB HugePages available
+Result: ❌ Insufficient! (need 24GB minimum)
+```
+
+**If Validation Fails:**
+
+The script will provide specific recommendations:
+
+* **Option 1**: Increase HugePages allocation (recommended)
+* **Option 2**: Reduce test scale to match available resources
+* **Option 3**: Run without HugePages (reduced performance)
+
+**Real-World Application:**
+
+This validation process mirrors production capacity planning:
+
+* ✅ Always validate resources before deploying VMs
+* ✅ Account for overhead (virt-launcher, QEMU, etc.)
+* ✅ Plan for headroom (don't use 100% of resources)
+* ✅ Monitor and adjust based on actual usage
+
+**This is exactly what you'd do in production before deploying VMs!**
+====
 
 [[vm-optimization]]
 == VM Optimization for Low-Latency
@@ -578,40 +720,55 @@ spec:
 For this performance testing module, containerDisk provides the most accurate VMI startup measurements!
 ====
 
-. Conditionally enable performance features based on cluster configuration:
+. Configure VMI with optimal performance settings:
 +
 [source,bash,role=execute]
 ----
-  # Check if performance profile exists and update VMI template accordingly
-if oc get performanceprofile >/dev/null 2>&1; then
-    echo "✅ Performance profile found - enabling performance optimizations"
-
-    # Update the VMI template to include performance features
-    sed -i 's/# Performance features will be enabled conditionally/dedicatedCpuPlacement: true/' fedora-vmi.yml
-
-    # Check if HugePages are available
-    if oc get nodes -o jsonpath='{.items[*].status.allocatable.hugepages-1Gi}' | grep -q "Gi"; then
-        echo "✅ HugePages available - enabling HugePages"
-        sed -i 's/# HugePages will be added conditionally if available/hugepages:\n        pageSize: 1Gi/' fedora-vmi.yml
-    else
-        echo "⚠️  HugePages not available - using regular memory"
-    fi
-else
-    echo "ℹ️  No performance profile found - using default configuration"
-    echo "   This is expected if Module 4 hasn't been completed"
-    echo ""
-    echo "🎯 Performance Tip:"
-    echo "   For optimal VMI performance, consider completing Module 4 first"
-    echo "   Performance profiles will enable:"
-    echo "   • dedicatedCpuPlacement: true (guaranteed CPU access)"
-    echo "   • HugePages support (reduced memory latency)"
-    echo "   • CPU isolation (eliminates noisy neighbor effects)"
-    echo "   • Faster VMI startup times (up to 50% improvement)"
-    echo ""
-    echo "   Note: Using 'host-model' CPU mode for better compatibility"
-    echo "   You can continue with default settings or go back to Module 4"
-fi
+# Generate optimized VMI configuration
+bash ~/low-latency-performance-workshop/scripts/module05-configure-vmi.sh
 ----
++
+[TIP]
+====
+**What This Script Does:**
+
+* Auto-detects Performance Profile availability
+* Auto-detects HugePages configuration
+* Generates optimized VMI YAML with:
+  - CPU pinning (if Performance Profile exists)
+  - HugePages (if available)
+  - Appropriate CPU model (host-passthrough or host-model)
+  - Educational comments
+
+**Benefits of Using the Script:**
+
+* **Dynamic Configuration**: Adapts to your cluster's capabilities
+* **Educational Feedback**: Explains what features are enabled and why
+* **Flexible Options**: Customize VMI name, memory, CPUs, namespace
+* **Consistent Results**: Same configuration across different clusters
+
+**Script Options:**
+
+* `--name NAME`: VMI name (default: fedora-vmi)
+* `--namespace NS`: Namespace (default: default)
+* `--memory SIZE`: Memory size (default: 2Gi)
+* `--cpus NUM`: Number of CPUs (default: 2)
+* `--output FILE`: Output file (default: fedora-vmi.yml)
+
+**Example with Custom Settings:**
+
+```bash
+bash ~/low-latency-performance-workshop/scripts/module05-configure-vmi.sh \
+  --name my-vm \
+  --memory 4Gi \
+  --cpus 4 \
+  --output my-vm.yml
+```
+
+**If No Performance Profile:**
+
+The script will generate a VMI configuration with default settings and provide guidance on completing Module 4 for enhanced performance.
+====
 
 . Clean up any existing VMI test resources before starting:
 +
@@ -740,8 +897,190 @@ elif [ "\$TOTAL_VMIS" -eq 10 ]; then
 else
     echo "⚠️  Expected 10 VMIs, found \$TOTAL_VMIS"
     echo "   Review kube-burner logs for errors"
+    echo ""
+    echo "💡 If VMIs failed, see troubleshooting section below"
 fi
 ----
+
+[[troubleshooting-vmi-failures]]
+=== Troubleshooting VMI Failures
+
+If your VMIs are not running successfully, this section will help you diagnose and fix common issues.
+
+. **Check VMI and Pod Status**:
++
+[source,bash,role=execute]
+----
+# Get detailed status of all VMIs
+echo "=== VMI Status ==="
+oc get vmi --all-namespaces --selector=app=vmi-latency-test
+
+echo ""
+echo "=== virt-launcher Pod Status ==="
+oc get pods --all-namespaces --selector=kubevirt.io=virt-launcher | grep vmi-latency
+
+echo ""
+echo "=== Failed/OOMKilled Pods ==="
+oc get pods --all-namespaces --selector=kubevirt.io=virt-launcher | grep -E "OOMKilled|Error|CrashLoop" || echo "No failed pods"
+----
+
+. **Diagnose OOMKilled VMIs** (Most Common Issue):
++
+[source,bash,role=execute]
+----
+# Check if VMIs are OOMKilled due to insufficient HugePages
+echo "=== Checking for OOMKilled VMIs ==="
+OOMKILLED_COUNT=$(oc get pods --all-namespaces --selector=kubevirt.io=virt-launcher -o jsonpath='{.items[*].status.containerStatuses[*].lastState.terminated.reason}' 2>/dev/null | grep -o "OOMKilled" | wc -l)
+
+if [ "$OOMKILLED_COUNT" -gt 0 ]; then
+    echo "❌ Found $OOMKILLED_COUNT OOMKilled virt-launcher pods"
+    echo ""
+    echo "Root Cause: Insufficient HugePages for VMI memory + overhead"
+    echo ""
+    echo "Explanation:"
+    echo "  • Each VMI needs: 2GB guest + 1GB virt-launcher overhead = 3GB total"
+    echo "  • Test creates: 10 VMIs × 3GB = 30GB required"
+    echo "  • Available HugePages: $(oc get node -o jsonpath='{.items[0].status.allocatable.hugepages-1Gi}' | sed 's/Gi//g')GB"
+    echo ""
+    echo "Solutions:"
+    echo ""
+    echo "  Option 1: Increase HugePages (Recommended)"
+    echo "  ─────────────────────────────────────────"
+    echo "  bash ~/low-latency-performance-workshop/scripts/module05-update-hugepages.sh"
+    echo ""
+    echo "  This will:"
+    echo "  • Calculate optimal HugePages for your cluster"
+    echo "  • Update Performance Profile"
+    echo "  • Trigger node reboot (wait 10-15 minutes)"
+    echo "  • Allocate sufficient HugePages for 10 VMIs"
+    echo ""
+    echo "  Option 2: Reduce Test Scale"
+    echo "  ───────────────────────────"
+    echo "  Edit ~/kube-burner-configs/vmi-latency-config.yml:"
+    echo ""
+    echo "  Current:"
+    echo "    jobIterations: 5"
+    echo "    replicas: 2"
+    echo "    Total: 10 VMIs"
+    echo ""
+    echo "  Recommended for 16GB HugePages:"
+    echo "    jobIterations: 2"
+    echo "    replicas: 2"
+    echo "    Total: 4 VMIs (fits in 16GB)"
+    echo ""
+    echo "  Then clean up and re-run:"
+    echo "    oc delete vmi --selector=app=vmi-latency-test --all-namespaces"
+    echo "    kube-burner init -c vmi-latency-config.yml"
+    echo ""
+else
+    echo "✅ No OOMKilled pods found"
+fi
+----
+
+. **Check HugePages Allocation**:
++
+[source,bash,role=execute]
+----
+# Detailed HugePages analysis
+echo "=== HugePages Allocation Analysis ==="
+echo ""
+
+# Get HugePages from Performance Profile
+PERF_PROFILE=$(oc get performanceprofile -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+if [ -n "$PERF_PROFILE" ]; then
+    HUGEPAGES_COUNT=$(oc get performanceprofile "$PERF_PROFILE" -o jsonpath='{.spec.hugepages.pages[0].count}' 2>/dev/null)
+    HUGEPAGES_SIZE=$(oc get performanceprofile "$PERF_PROFILE" -o jsonpath='{.spec.hugepages.pages[0].size}' 2>/dev/null)
+    echo "Performance Profile: $PERF_PROFILE"
+    echo "  Configured: ${HUGEPAGES_COUNT} × ${HUGEPAGES_SIZE} = ${HUGEPAGES_COUNT}GB"
+fi
+
+echo ""
+
+# Get HugePages from node
+NODE=$(oc get nodes -o jsonpath='{.items[0].metadata.name}')
+HUGEPAGES_CAPACITY=$(oc get node "$NODE" -o jsonpath='{.status.capacity.hugepages-1Gi}' | sed 's/Gi//g')
+HUGEPAGES_ALLOCATABLE=$(oc get node "$NODE" -o jsonpath='{.status.allocatable.hugepages-1Gi}' | sed 's/Gi//g')
+
+echo "Node: $NODE"
+echo "  Capacity: ${HUGEPAGES_CAPACITY}GB"
+echo "  Allocatable: ${HUGEPAGES_ALLOCATABLE}GB"
+
+echo ""
+echo "VMI Capacity Calculation:"
+echo "  • VMI memory requirement: 3GB per VMI (2GB guest + 1GB overhead)"
+echo "  • Available HugePages: ${HUGEPAGES_ALLOCATABLE}GB"
+echo "  • Max concurrent VMIs: ~$((HUGEPAGES_ALLOCATABLE / 3))"
+echo "  • Test requires: 10 VMIs = 30GB"
+echo ""
+
+if [ "$HUGEPAGES_ALLOCATABLE" -ge 30 ]; then
+    echo "✅ Sufficient HugePages for 10 VMIs"
+elif [ "$HUGEPAGES_ALLOCATABLE" -ge 24 ]; then
+    echo "⚠️  Sufficient for 8 VMIs, reduce test scale to 8"
+elif [ "$HUGEPAGES_ALLOCATABLE" -ge 18 ]; then
+    echo "⚠️  Sufficient for 6 VMIs, reduce test scale to 6"
+elif [ "$HUGEPAGES_ALLOCATABLE" -ge 12 ]; then
+    echo "⚠️  Sufficient for 4 VMIs, reduce test scale to 4"
+else
+    echo "❌ Insufficient HugePages, increase allocation to at least 24GB"
+fi
+----
+
+. **Check VMI Events for Errors**:
++
+[source,bash,role=execute]
+----
+# Check events for failed VMIs
+echo "=== Recent VMI Events ==="
+oc get events --all-namespaces --field-selector involvedObject.kind=VirtualMachineInstance --sort-by='.lastTimestamp' | tail -20
+----
+
+. **View virt-launcher Pod Logs**:
++
+[source,bash,role=execute]
+----
+# Get logs from a failed virt-launcher pod
+echo "=== virt-launcher Pod Logs (first failed pod) ==="
+FAILED_POD=$(oc get pods --all-namespaces --selector=kubevirt.io=virt-launcher -o jsonpath='{.items[?(@.status.phase!="Running")].metadata.name}' | awk '{print $1}' | head -1)
+FAILED_NS=$(oc get pods --all-namespaces --selector=kubevirt.io=virt-launcher -o jsonpath='{.items[?(@.status.phase!="Running")].metadata.namespace}' | awk '{print $1}' | head -1)
+
+if [ -n "$FAILED_POD" ]; then
+    echo "Pod: $FAILED_POD (namespace: $FAILED_NS)"
+    echo ""
+    oc logs -n "$FAILED_NS" "$FAILED_POD" --tail=50 2>/dev/null || echo "No logs available"
+else
+    echo "No failed pods found"
+fi
+----
+
+[TIP]
+====
+**Common VMI Failure Patterns:**
+
+1. **OOMKilled** = Insufficient memory/HugePages
+   * Solution: Increase HugePages or reduce test scale
+
+2. **Scheduling** (stuck) = No HugePages available
+   * Solution: Increase HugePages allocation
+
+3. **ImagePullBackOff** = Cannot pull containerDisk image
+   * Solution: Check network connectivity, image registry access
+
+4. **CrashLoopBackOff** = VMI starts but crashes
+   * Solution: Check virt-launcher logs, verify CPU/memory settings
+
+5. **Pending** (stuck) = Cannot schedule to node
+   * Solution: Check node resources, taints, tolerations
+
+**Prevention:**
+
+Always run the validation script before testing:
+```bash
+bash ~/low-latency-performance-workshop/scripts/module05-validate-vmi-resources.sh
+```
+
+This will catch resource issues before they cause failures!
+====
 
 === Analyzing VMI Latency Results
 
@@ -986,48 +1325,747 @@ fi
 [[sr-iov]]
 == SR-IOV Configuration for High-Performance VM Networking
 
-SR-IOV (Single Root I/O Virtualization) provides direct hardware access to VMs, bypassing the software networking stack for maximum performance.
+SR-IOV (Single Root I/O Virtualization) provides direct hardware access to **Virtual Machines**, bypassing the software networking stack for maximum performance. This is particularly important for VMs that require near bare-metal network performance.
 
-=== Understanding SR-IOV Benefits
+[NOTE]
+====
+**Lab Environment Considerations:**
+
+This workshop supports two approaches for high-performance VM networking:
+
+1. **Production SR-IOV** (requires SR-IOV capable hardware)
+   - Direct hardware access via Virtual Functions (VFs)
+   - <1ms latency, near line-rate throughput
+   - Requires physical SR-IOV NICs
+
+2. **Lab Simulation with User Defined Networks** (works in any environment)
+   - Uses OVN-Kubernetes secondary networks
+   - Better performance than default pod network
+   - No special hardware required
+   - **Recommended for lab/learning environments**
+
+This module covers **both approaches** so you can learn SR-IOV concepts and test in your lab environment.
+====
+
+=== Choosing Your Networking Approach
+
+[cols="1,2,2,2"]
+|===
+| Approach | Use Case | Hardware Required | Performance
+
+| **Default Pod Network**
+| Basic VMs, development
+| None
+| 2-5ms latency
+
+| **User Defined Networks** +
+(Lab Simulation)
+| Lab environments, learning, testing
+| None
+| 1-3ms latency +
+(30-50% improvement)
+
+| **SR-IOV** +
+(Production)
+| Production NFV, real-time apps
+| SR-IOV capable NICs
+| <1ms latency +
+(near bare-metal)
+|===
+
+[TIP]
+====
+**Recommendation for This Workshop:**
+
+* **Lab/Learning Environment**: Use **User Defined Networks** (covered in detail below)
+* **Production Environment**: Use **SR-IOV** (also covered for reference)
+
+Both approaches teach the same concepts:
+- Dual-interface VM design
+- Network separation (management vs data plane)
+- Performance optimization techniques
+- Multi-network VM architecture
+====
+
+=== Understanding SR-IOV Benefits for VMs
 
 [cols="1,2,3"]
 |===
-| Feature | Traditional Networking | SR-IOV Networking
+| Feature | VM with Pod Network | VM with SR-IOV
 
 | **Latency**
-| Higher (software stack overhead)
-| Ultra-low (direct hardware access)
+| 2-5ms (through virt-launcher pod)
+| <1ms (direct hardware access)
 
 | **Throughput**
-| Limited by host networking stack
-| Near line-rate performance
+| 5-20 Gbps (limited by pod network)
+| Near line-rate (40-100 Gbps)
 
 | **CPU Usage**
-| Higher (packet processing overhead)
+| Higher (virtio + pod network overhead)
 | Lower (hardware offload)
 
 | **Isolation**
-| Software-based
-| Hardware-enforced
+| Software-based (pod network)
+| Hardware-enforced (dedicated VF)
+
+| **Network Stack**
+| VM → virtio → virt-launcher → CNI → host
+| VM → SR-IOV VF → physical NIC
 |===
+
+[IMPORTANT]
+====
+**Why SR-IOV Matters for VMs:**
+
+* **Eliminates Virtualization Overhead**: VMs bypass the virt-launcher pod network entirely
+* **Direct Hardware Access**: Each VM gets a dedicated Virtual Function (VF) from the physical NIC
+* **Predictable Performance**: Hardware-enforced QoS and isolation
+* **Production Workloads**: Essential for NFV, real-time applications, and high-throughput VMs
+
+SR-IOV is the key technology for achieving container-like network performance in VMs.
+====
 
 === Verifying SR-IOV Network Operator
 
-The SR-IOV Network Operator was deployed in Module 2. Let's verify it's ready:
+The SR-IOV Network Operator was deployed in Module 2. Let's verify it's ready for VM networking:
 
 . Check SR-IOV operator status:
 +
 [source,bash,role=execute]
 ----
-  # Check SR-IOV operator installation
+# Check SR-IOV operator installation
 oc get csv -n openshift-sriov-network-operator
 
-  # Verify SR-IOV operator pods
+# Verify SR-IOV operator pods
 oc get pods -n openshift-sriov-network-operator
 
-  # Check if SR-IOV capable nodes are detected
+# Check if SR-IOV capable nodes are detected
 oc get sriovnetworknodestates -n openshift-sriov-network-operator
+
+# List available SR-IOV network node policies
+oc get sriovnetworknodepolicy -n openshift-sriov-network-operator
+
+# Check for SR-IOV networks configured for VMs
+oc get sriovnetwork -n openshift-sriov-network-operator
 ----
++
+[TIP]
+====
+If SR-IOV hardware is not available or the operator shows no SR-IOV capable nodes, proceed to the **Lab Simulation** section below to use User Defined Networks instead.
+====
+
+[[lab-simulation]]
+=== Lab Simulation: High-Performance VM Networking with User Defined Networks
+
+For lab environments without SR-IOV hardware, we can simulate high-performance VM networking using **OVN-Kubernetes User Defined Networks** (also called Secondary Networks). While not as fast as SR-IOV, this provides better performance than the default pod network and demonstrates the same networking concepts.
+
+==== Clean Up Previous Test VMIs
+
+Before creating the high-performance VM, clean up VMIs from the previous kube-burner test to free HugePages:
+
+. Check current VMI resource usage:
++
+[source,bash,role=execute]
+----
+# Check running VMIs and their HugePages usage
+echo "=== Current VMIs ==="
+oc get vmi --all-namespaces
+
+echo ""
+echo "=== HugePages Usage ==="
+oc get node -o jsonpath='{.items[0].status.allocatable.hugepages-1Gi}' | sed 's/Gi/ GB available/g'
+echo ""
+
+# Calculate VMIs using HugePages
+VMI_COUNT=$(oc get vmi --all-namespaces --no-headers 2>/dev/null | wc -l)
+if [ "$VMI_COUNT" -gt 0 ]; then
+    echo "Current VMIs: $VMI_COUNT"
+    echo "Estimated HugePages in use: ~$((VMI_COUNT * 3)) GB (assuming 2GB guest + 1GB overhead per VMI)"
+    echo ""
+    echo "⚠️  Cleanup recommended before creating new VMs"
+fi
+----
++
+[IMPORTANT]
+====
+**Why Cleanup is Important:**
+
+Each VMI consumes HugePages memory that remains allocated even after testing completes:
+
+* **VMI Guest Memory**: 2GB per VMI (configured in VMI spec)
+* **virt-launcher Overhead**: ~1GB per VMI (KubeVirt management pod)
+* **Total per VMI**: ~3GB
+
+**Example:**
+```
+8 running VMIs × 3GB = 24GB HugePages in use
+Available HugePages: 24GB
+Result: No HugePages available for new VMs! ❌
+```
+
+**Best Practice:** Always clean up test VMIs before starting new VM deployments to avoid resource exhaustion.
+====
+
+. Clean up test VMIs and namespaces:
++
+[source,bash,role=execute]
+----
+# Delete all VMIs from kube-burner test
+echo "Cleaning up test VMIs..."
+oc delete vmi --selector=app=vmi-latency-test --all-namespaces --wait=false
+
+# Delete test namespaces
+for i in {0..4}; do
+    oc delete namespace vmi-latency-test-$i --wait=false 2>/dev/null || true
+done
+
+echo ""
+echo "Cleanup initiated. Waiting for resources to be freed..."
+sleep 10
+
+# Verify cleanup
+echo ""
+echo "=== Remaining VMIs ==="
+oc get vmi --all-namespaces
+
+echo ""
+echo "=== HugePages Now Available ==="
+oc get node -o jsonpath='{.items[0].status.allocatable.hugepages-1Gi}' | sed 's/Gi/ GB available/g'
+echo ""
+----
++
+[TIP]
+====
+If you see VMIs still terminating, wait a few moments for them to fully clean up. You can monitor with:
+```bash
+watch oc get vmi --all-namespaces
+```
+Press `Ctrl+C` to exit the watch command.
+====
+
+==== Create User Defined Network
+
+[IMPORTANT]
+====
+**Why User Defined Networks for Lab Environments:**
+
+* **No Special Hardware Required**: Works on any OpenShift cluster
+* **Better Performance**: Dedicated network namespace, reduced overhead
+* **Same Concepts**: Dual-interface design, network separation
+* **Production Pattern**: Many production VMs use secondary networks
+* **Learning Value**: Understand multi-network VM architecture
+
+**Performance Comparison:**
+* Default Pod Network: 2-5ms latency
+* User Defined Network: 1-3ms latency (30-50% improvement)
+* SR-IOV: <1ms latency (production target)
+====
+
+. Create a User Defined Network for high-performance VM networking:
++
+[source,yaml,role=execute]
+----
+cat << EOF | oc apply -f -
+apiVersion: k8s.ovn.org/v1
+kind: UserDefinedNetwork
+metadata:
+  name: vm-high-perf-network
+  namespace: default
+spec:
+  topology: Layer2
+  layer2:
+    role: Secondary
+    subnets:
+      - "192.168.100.0/24"
+EOF
+----
++
+[NOTE]
+====
+**UserDefinedNetwork (UDN) - Modern OpenShift 4.18+ Approach:**
+
+This creates a Layer2 User Defined Network using native OVN-Kubernetes integration:
+
+* **API**: `k8s.ovn.org/v1` (native OVN-Kubernetes, not Multus)
+* **Topology**: Layer2 (recommended for VM networking)
+* **Role**: Secondary (additional network, not replacing pod network)
+* **Subnet**: 192.168.100.0/24 (automatic IPAM by OVN-K)
+* **Benefits**:
+  - Simpler configuration than NetworkAttachmentDefinition
+  - Native OVN-Kubernetes IPAM (no manual IPAM configuration needed)
+  - Better integration with OpenShift Virtualization
+  - Recommended approach for OpenShift 4.18+
+
+**Why Layer2?**
+- VMs can communicate at Layer2 (like a virtual switch)
+- Better for VM-to-VM communication
+- Supports VM live migration with persistent IPs
+- Simpler than Layer3 for most VM use cases
+
+**Note:** OpenShift automatically creates a corresponding NetworkAttachmentDefinition for compatibility with VMs.
+====
+
+. Verify the UserDefinedNetwork was created:
++
+[source,bash,role=execute]
+----
+# Check UserDefinedNetwork
+echo "=== UserDefinedNetwork ==="
+oc get userdefinednetwork vm-high-perf-network -n default -o yaml
+
+echo ""
+echo "=== Auto-Generated NetworkAttachmentDefinition ==="
+# OpenShift automatically creates a NetworkAttachmentDefinition for VM compatibility
+oc get net-attach-def vm-high-perf-network -n default
+
+echo ""
+echo "=== Network Details ==="
+oc describe userdefinednetwork vm-high-perf-network -n default
+----
++
+[TIP]
+====
+**What Just Happened:**
+
+When you create a `UserDefinedNetwork`, OpenShift automatically:
+
+1. **Creates the UDN**: The Layer2 network with OVN-K IPAM
+2. **Auto-generates NetworkAttachmentDefinition**: For backward compatibility with VMs
+3. **Configures OVN**: Sets up the virtual switch and subnet
+
+**Key Point:** VMs still reference the network using `multus.networkName` in their spec, but the underlying implementation is now the modern UserDefinedNetwork instead of manual NetworkAttachmentDefinition configuration.
+
+This is why UserDefinedNetwork is better:
+- ✅ You define the network once (simple YAML)
+- ✅ OpenShift handles the NetworkAttachmentDefinition automatically
+- ✅ Native OVN-K integration (no manual CNI JSON)
+- ✅ Built-in IPAM (no configuration needed)
+====
+
+. Create a high-performance VM with dual network interfaces (lab simulation):
++
+[source,yaml,role=execute]
+----
+cat << EOF | oc apply -f -
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: high-perf-vm-lab
+  namespace: default
+  labels:
+    app: high-perf-vm
+spec:
+  running: true
+  dataVolumeTemplates:
+    - metadata:
+        name: high-perf-vm-lab-rootdisk
+      spec:
+        storage:
+          resources:
+            requests:
+              storage: 30Gi
+        sourceRef:
+          kind: DataSource
+          name: fedora
+          namespace: openshift-virtualization-os-images
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: high-perf-vm-lab
+        app: high-perf-vm
+    spec:
+      domain:
+        cpu:
+          cores: 4
+          dedicatedCpuPlacement: true  # Pin CPUs for low latency
+        memory:
+          hugepages:
+            pageSize: 1Gi  # Use 1Gi HugePages (matches cluster configuration)
+          guest: 4Gi
+        resources:
+          requests:
+            memory: 4Gi
+          limits:
+            memory: 4Gi
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            # Primary interface: Pod network (for management)
+            - name: default
+              masquerade: {}
+            # Secondary interface: User Defined Network (for high-performance data)
+            - name: high-perf-net
+              bridge: {}
+          networkInterfaceMultiqueue: true  # Enable multi-queue for better performance
+      networks:
+        # Pod network for management traffic
+        - name: default
+          pod: {}
+        # User Defined Network for data plane traffic
+        - name: high-perf-net
+          multus:
+            networkName: vm-high-perf-network
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: high-perf-vm-lab-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              user: fedora
+              password: fedora
+              chpasswd: { expire: False }
+              runcmd:
+                - nmcli con add type ethernet con-name eth1 ifname eth1 ip4 192.168.100.10/24
+                - nmcli con up eth1
+EOF
+----
++
+[TIP]
+====
+**Lab VM Configuration Explained:**
+
+* **Disk Configuration** (DataVolume):
+  - Uses `dataVolumeTemplates` to create persistent disk
+  - Source: VolumeSnapshot from `openshift-virtualization-os-images`
+  - Pre-installed Fedora image (fast boot, even without KVM)
+  - 30Gi storage allocation
+  - **Why not containerDisk?** containerDisk is slow without KVM hardware virtualization
+
+* **Dual Network Interfaces** (same as production SR-IOV):
+  - `default`: Pod network for management (SSH, monitoring)
+  - `high-perf-net`: User Defined Network for data plane
+
+* **Performance Optimizations** (Educational Examples):
+  - `dedicatedCpuPlacement: true` - Pins CPUs to VM (requires KVM for full benefit)
+  - `hugepages: pageSize: 1Gi` - Uses 1Gi HugePages (matches cluster config from Module 4)
+  - `resources: requests/limits: 4Gi` - Guarantees memory allocation
+  - `networkInterfaceMultiqueue: true` - Parallel packet processing (4 queues per interface)
+  - `bridge: {}` - Direct bridge attachment (better than masquerade)
+
+* **HugePages Configuration**:
+  - VM requests 4GB guest memory
+  - Uses 4 × 1Gi HugePages (matches Performance Profile)
+  - Plus ~1GB virt-launcher overhead = ~5GB total
+  - Must match cluster's HugePages size (1Gi from Module 4)
+  - **Note:** HugePages work with or without KVM, but provide best performance with KVM
+
+* **Cloud-init Configuration**:
+  - Creates user `fedora` with password `fedora`
+  - Automatically configures eth1 with static IP (192.168.100.10/24)
+  - Sets up network interface on boot
+  - Ready for testing immediately
+
+**This simulates SR-IOV architecture without special hardware!**
+
+**Note:** This VM demonstrates performance features (HugePages, CPU pinning, multi-queue) that are typically used with KVM hardware virtualization. The VM will boot and run successfully even without KVM (using software emulation), but performance features provide maximum benefit when KVM is available.
+====
+
+. Wait for the DataVolume to be created and the VM to start:
++
+[source,bash,role=execute]
+----
+# Check DataVolume creation progress
+echo "=== DataVolume Status ==="
+oc get dv high-perf-vm-lab-rootdisk -n default
+
+# Wait for DataVolume to be ready (cloning from snapshot)
+echo ""
+echo "Waiting for DataVolume to be ready (this may take 1-2 minutes)..."
+oc wait --for=condition=Ready dv/high-perf-vm-lab-rootdisk -n default --timeout=300s
+
+# Check VM status
+echo ""
+echo "=== VM Status ==="
+oc get vm high-perf-vm-lab -n default
+oc get vmi high-perf-vm-lab -n default
+----
++
+[NOTE]
+====
+**DataVolume Creation Process:**
+
+When you create a VM with `dataVolumeTemplates`, OpenShift Virtualization:
+
+1. **Creates a DataVolume** - Persistent storage for the VM
+2. **Clones from VolumeSnapshot** - Copies the Fedora image from the snapshot
+3. **Creates a PVC** - Persistent Volume Claim for the disk
+4. **Starts the VM** - Once the DataVolume is ready
+
+This process takes 1-2 minutes but results in a fast-booting VM with persistent storage.
+
+**Advantages over containerDisk:**
+- ✅ Faster boot (pre-installed image)
+- ✅ Persistent storage (survives VM restarts)
+- ✅ Works well without KVM hardware virtualization
+- ✅ Same image used by OpenShift Console VM wizard
+====
+
+. Verify the VM has dual network interfaces:
++
+[source,bash,role=execute]
+----
+# Wait for VM to be running
+oc wait --for=condition=Ready vmi/high-perf-vm-lab --timeout=300s
+
+# Check VM network interfaces
+oc get vmi high-perf-vm-lab -o jsonpath='{.status.interfaces}' | jq
+
+# Verify both networks are attached
+echo "VM Network Configuration:"
+oc get vmi high-perf-vm-lab -o jsonpath='{.spec.networks}' | jq
+
+# Check that VM has both pod network and user defined network
+oc describe vmi high-perf-vm-lab | grep -A 10 "Interfaces"
+----
+
+. Test the VM's network performance:
++
+[source,bash,role=execute]
+----
+# Use the VMI network tester to validate connectivity
+python3 ~/low-latency-performance-workshop/scripts/module05-vmi-network-tester.py \
+    --namespace default
+
+# Access the VM to verify network interfaces
+virtctl console high-perf-vm-lab
+
+# Inside the VM, check network interfaces
+ip addr show
+
+# You should see:
+# - eth0: Pod network interface (management) - 10.x.x.x
+# - eth1: User Defined Network (high-performance) - 192.168.100.10
+
+# Test connectivity on both interfaces
+ping -c 4 -I eth0 8.8.8.8  # Management network
+ping -c 4 -I eth1 192.168.100.1  # High-performance network
+
+# Check interface statistics
+ip -s link show eth0
+ip -s link show eth1
+----
+
+[IMPORTANT]
+====
+**Lab Simulation Performance Expectations:**
+
+* **Pod Network (eth0)**: 2-5ms latency, 5-20 Gbps throughput
+* **User Defined Network (eth1)**: 1-3ms latency, 10-30 Gbps throughput
+* **Improvement**: 30-50% better latency than pod network alone
+
+While not as fast as SR-IOV (<1ms), this demonstrates:
+- Dual-interface VM architecture
+- Network separation (control vs data plane)
+- Performance optimization techniques
+- Production-ready patterns
+
+**This is perfect for learning and lab environments!**
+====
+
+=== Configuring SR-IOV for Virtual Machines (Production)
+
+[NOTE]
+====
+**When to Use This Section:**
+
+* You have SR-IOV capable hardware (Intel X710, Mellanox ConnectX-5, etc.)
+* The SR-IOV Network Operator detected SR-IOV capable nodes
+* You need <1ms latency for production workloads
+* You're deploying NFV or real-time applications
+
+**For Lab Environments:** Use the User Defined Networks approach above instead.
+====
+
+Unlike pods, VMs require specific SR-IOV network configuration to attach Virtual Functions directly to the VM.
+
+. Create an SR-IOV Network for VM use (production hardware required):
++
+[source,yaml,role=execute]
+----
+cat << EOF | oc apply -f -
+apiVersion: sriovnetwork.openshift.io/v1
+kind: SriovNetwork
+metadata:
+  name: vm-sriov-network
+  namespace: openshift-sriov-network-operator
+spec:
+  resourceName: vm_sriov_net
+  networkNamespace: default
+  vlan: 100  # Optional: VLAN tagging
+  capabilities: '{"ips": true, "mac": true}'
+  # Important: This network will be used by VMs
+  ipam: |
+    {
+      "type": "host-local",
+      "subnet": "192.168.100.0/24",
+      "rangeStart": "192.168.100.10",
+      "rangeEnd": "192.168.100.100",
+      "gateway": "192.168.100.1"
+    }
+EOF
+----
++
+[NOTE]
+====
+This creates an SR-IOV network specifically for VM use. The `resourceName` must match the SR-IOV Network Node Policy configured in Module 2.
+====
+
+. Create a high-performance VM with SR-IOV networking:
++
+[source,yaml,role=execute]
+----
+cat << EOF | oc apply -f -
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: high-performance-vm-sriov
+  namespace: default
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: high-performance-vm-sriov
+    spec:
+      domain:
+        cpu:
+          cores: 4
+          dedicatedCpuPlacement: true  # Pin CPUs for low latency
+        memory:
+          hugepages:
+            pageSize: 2Mi  # Use HugePages
+          guest: 4Gi
+        devices:
+          disks:
+            - name: containerdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            # Primary interface: Pod network (for management)
+            - name: default
+              masquerade: {}
+            # Secondary interface: SR-IOV (for high-performance data plane)
+            - name: sriov-net
+              sriov: {}
+      networks:
+        # Pod network for management traffic
+        - name: default
+          pod: {}
+        # SR-IOV network for data plane traffic
+        - name: sriov-net
+          multus:
+            networkName: vm-sriov-network
+      volumes:
+        - name: containerdisk
+          containerDisk:
+            image: quay.io/containerdisks/fedora:latest
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              password: fedora
+              chpasswd: { expire: False }
+EOF
+----
++
+[TIP]
+====
+**VM SR-IOV Configuration Explained:**
+
+* **Two Network Interfaces**:
+  - `default`: Pod network for management (SSH, monitoring)
+  - `sriov-net`: SR-IOV for high-performance data traffic
+
+* **Why Two Interfaces?**
+  - Management traffic doesn't need SR-IOV performance
+  - Data plane traffic gets direct hardware access
+  - Separates control and data planes
+
+* **Performance Features**:
+  - `dedicatedCpuPlacement: true` - Pins CPUs to VM
+  - `hugepages` - Reduces memory overhead
+  - `sriov: {}` - Attaches SR-IOV VF directly to VM
+====
+
+. Verify the VM has SR-IOV networking:
++
+[source,bash,role=execute]
+----
+# Wait for VM to be running
+oc wait --for=condition=Ready vmi/high-performance-vm-sriov --timeout=300s
+
+# Check VM network interfaces
+oc get vmi high-performance-vm-sriov -o jsonpath='{.status.interfaces}' | jq
+
+# Verify SR-IOV VF is attached
+oc describe vmi high-performance-vm-sriov | grep -A 10 "Interfaces"
+
+# Check that VM has both pod network and SR-IOV
+echo "VM Network Configuration:"
+oc get vmi high-performance-vm-sriov -o jsonpath='{.spec.networks}' | jq
+----
+
+=== Testing VM SR-IOV Network Performance
+
+Now let's test the network performance of the VM with SR-IOV to see the improvement over pod networking.
+
+. Access the VM and check network interfaces:
++
+[source,bash,role=execute]
+----
+# Access the VM console
+virtctl console high-performance-vm-sriov
+
+# Inside the VM, check network interfaces
+ip addr show
+
+# You should see:
+# - eth0: Pod network interface (management)
+# - eth1: SR-IOV interface (high-performance)
+
+# Check SR-IOV interface details
+ethtool -i eth1
+
+# Test network performance (requires iperf3 installed)
+# From another VM or pod, run iperf3 server
+# Then from this VM: iperf3 -c <server-ip> -i 1 -t 30
+----
+
+. Use the VMI network tester to validate SR-IOV VM connectivity:
++
+[source,bash,role=execute]
+----
+# Test networking to the SR-IOV-enabled VM
+python3 ~/low-latency-performance-workshop/scripts/module05-vmi-network-tester.py \
+    --namespace default
+
+# This will test connectivity to VMs including SR-IOV-enabled ones
+# Expected results:
+# - Pod network interface: 2-5ms latency
+# - SR-IOV interface: <1ms latency (if tested directly)
+----
+
+[IMPORTANT]
+====
+**SR-IOV Performance Expectations for VMs:**
+
+* **Pod Network (eth0)**: 2-5ms latency, 5-20 Gbps throughput
+* **SR-IOV Network (eth1)**: <1ms latency, near line-rate throughput
+
+The SR-IOV interface provides **5-10x better latency** and **2-5x better throughput** compared to pod networking for VMs.
+====
 
 === Network Policy Latency Testing
 

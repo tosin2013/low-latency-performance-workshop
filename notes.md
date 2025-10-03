@@ -1,0 +1,1 @@
+ oc get namespaces | grep vmi-latency-test | awk '{print $1}' | xargs -r oc delete namespace

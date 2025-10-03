@@ -240,222 +240,68 @@ Now we'll create a Performance Profile that configures CPU isolation, HugePages,
 +
 [source,bash,role=execute]
 ----
-# Load cluster configuration
-source /tmp/cluster-config
-
-# Get CPU information
-CPU_COUNT=$(oc debug node/$TARGET_NODE -- chroot /host nproc)
-echo "=== CPU Allocation Planning ==="
-echo "Target node: $TARGET_NODE"
-echo "Total CPUs available: $CPU_COUNT"
-echo "Cluster type: $CLUSTER_TYPE"
-
-# Calculate CPU allocation based on cluster architecture
-if [ "$CLUSTER_TYPE" = "SNO" ]; then
-    echo ""
-    echo "🔧 SNO CPU Allocation Strategy (Workshop-Friendly):"
-    echo "   - Conservative allocation preserving cluster functionality"
-    echo "   - Reserve sufficient CPUs for control plane, container runtime, and system services"
-    echo "   - Target ~60-75% isolation for performance demonstration"
-
-    if [ $CPU_COUNT -gt 16 ]; then
-        # For high CPU count (32+ cores): Reserve ~40% for system, isolate ~60%
-        RESERVED_COUNT=$((CPU_COUNT * 40 / 100))
-        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
-        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
-        echo "   - High CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~40%) for system stability"
-    elif [ $CPU_COUNT -gt 8 ]; then
-        # For medium CPU count (16+ cores): Reserve ~50% for system, isolate ~50%
-        RESERVED_COUNT=$((CPU_COUNT / 2))
-        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
-        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
-        echo "   - Medium CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~50%) for system stability"
-    elif [ $CPU_COUNT -gt 4 ]; then
-        # For lower CPU count (8+ cores): Reserve ~60% for system, isolate ~40%
-        RESERVED_COUNT=$((CPU_COUNT * 60 / 100))
-        if [ $RESERVED_COUNT -lt 3 ]; then RESERVED_COUNT=3; fi  # Minimum 3 for SNO
-        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
-        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
-        echo "   - Lower CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~60%) for system stability"
-    else
-        # For very low CPU count: Reserve most for system, minimal isolation
-        RESERVED_CPUS="0-$((CPU_COUNT-2))"
-        ISOLATED_CPUS="$((CPU_COUNT-1))"
-        echo "   - Very low CPU count ($CPU_COUNT cores): Minimal isolation for demonstration only"
-    fi
-
-elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
-    echo ""
-    echo "🔧 Multi-Node CPU Allocation Strategy (Workshop-Friendly):"
-    echo "   - More aggressive allocation possible (control plane on separate nodes)"
-    echo "   - Target ~75% isolation while preserving worker node functionality"
-
-    if [ $CPU_COUNT -gt 8 ]; then
-        # For high CPU count: Reserve ~25% for system, isolate ~75%
-        RESERVED_COUNT=$((CPU_COUNT * 25 / 100))
-        if [ $RESERVED_COUNT -lt 2 ]; then RESERVED_COUNT=2; fi  # Minimum 2 for worker
-        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
-        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
-        echo "   - High CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~25%) for system"
-    elif [ $CPU_COUNT -gt 4 ]; then
-        # For medium CPU count: Reserve ~33% for system, isolate ~67%
-        RESERVED_COUNT=$((CPU_COUNT * 33 / 100))
-        if [ $RESERVED_COUNT -lt 2 ]; then RESERVED_COUNT=2; fi
-        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
-        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
-        echo "   - Medium CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~33%) for system"
-    else
-        # For low CPU count: Reserve 50% for system
-        RESERVED_CPUS="0-1"
-        ISOLATED_CPUS="2-$((CPU_COUNT-1))"
-        echo "   - Low CPU count ($CPU_COUNT cores): Reserve 2 CPUs (50%) for system"
-    fi
-
-else
-    echo ""
-    echo "🔧 Multi-Master CPU Allocation Strategy (Workshop-Friendly):"
-    echo "   - Balanced allocation for control plane and workloads"
-    echo "   - Target ~60% isolation while maintaining control plane stability"
-
-    if [ $CPU_COUNT -gt 8 ]; then
-        # For high CPU count: Reserve ~40% for control plane, isolate ~60%
-        RESERVED_COUNT=$((CPU_COUNT * 40 / 100))
-        if [ $RESERVED_COUNT -lt 3 ]; then RESERVED_COUNT=3; fi  # Minimum 3 for master
-        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
-        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
-        echo "   - High CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~40%) for control plane"
-    elif [ $CPU_COUNT -gt 4 ]; then
-        # For medium CPU count: Reserve ~50% for control plane
-        RESERVED_COUNT=$((CPU_COUNT / 2))
-        RESERVED_CPUS="0-$((RESERVED_COUNT-1))"
-        ISOLATED_CPUS="$RESERVED_COUNT-$((CPU_COUNT-1))"
-        echo "   - Medium CPU count ($CPU_COUNT cores): Reserve $RESERVED_COUNT CPUs (~50%) for control plane"
-    else
-        # For low CPU count: Reserve most for control plane
-        RESERVED_CPUS="0-$((CPU_COUNT-2))"
-        ISOLATED_CPUS="$((CPU_COUNT-1))"
-        echo "   - Low CPU count ($CPU_COUNT cores): Minimal isolation for demonstration"
-    fi
-fi
-
-echo ""
-echo "📊 Final CPU Allocation (Workshop-Optimized):"
-echo "   Reserved CPUs: $RESERVED_CPUS"
-echo "   Isolated CPUs: $ISOLATED_CPUS"
-
-# Calculate and display percentages for clarity
-RESERVED_COUNT=$(echo $RESERVED_CPUS | tr '-' ' ' | awk '{if(NF==2) print $2-$1+1; else print 1}')
-ISOLATED_COUNT=$(echo $ISOLATED_CPUS | tr '-' ' ' | awk '{if(NF==2) print $2-$1+1; else print 1}')
-RESERVED_PERCENT=$((RESERVED_COUNT * 100 / CPU_COUNT))
-ISOLATED_PERCENT=$((ISOLATED_COUNT * 100 / CPU_COUNT))
-
-echo "   Reserved: $RESERVED_COUNT CPUs ($RESERVED_PERCENT%) - System/Control Plane"
-echo "   Isolated: $ISOLATED_COUNT CPUs ($ISOLATED_PERCENT%) - High-Performance Workloads"
-echo ""
-echo "✅ This allocation preserves cluster functionality while demonstrating performance benefits"
-
-# Save CPU configuration
-echo "RESERVED_CPUS=$RESERVED_CPUS" >> /tmp/cluster-config
-echo "ISOLATED_CPUS=$ISOLATED_CPUS" >> /tmp/cluster-config
-echo "RESERVED_COUNT=$RESERVED_COUNT" >> /tmp/cluster-config
-echo "ISOLATED_COUNT=$ISOLATED_COUNT" >> /tmp/cluster-config
+# Run the CPU allocation calculator script
+bash ~/low-latency-performance-workshop/scripts/module04-calculate-cpu-allocation.sh
 ----
++
+[TIP]
+====
+**What This Script Does:**
+
+* Detects CPU count on the target node
+* Calculates optimal CPU allocation based on cluster type (SNO, Multi-Node, Multi-Master)
+* Validates CPU ranges to prevent configuration errors
+* Saves configuration to `/tmp/cluster-config` for next steps
+
+**Benefits of Using the Script:**
+
+* **Error Prevention**: Validates CPU ranges before saving
+* **Handles Edge Cases**: Prevents division by zero and invalid ranges
+* **Clear Output**: Shows allocation strategy and percentages
+* **Reusable**: Can be run multiple times to recalculate
+
+The script implements workshop-friendly conservative allocation that preserves cluster functionality while demonstrating performance benefits.
+====
 
 . Create the Performance Profile optimized for your cluster architecture:
 +
 [source,bash,role=execute]
 ----
-# Load cluster configuration
-source /tmp/cluster-config
-
-echo "=== Creating Performance Profile ==="
-echo "Cluster type: $CLUSTER_TYPE"
-echo "Target node: $TARGET_NODE"
-echo "Reserved CPUs: $RESERVED_CPUS"
-echo "Isolated CPUs: $ISOLATED_CPUS"
-
-# Determine HugePages allocation based on cluster type
-if [ "$CLUSTER_TYPE" = "SNO" ]; then
-    HUGEPAGES_COUNT=1    # Conservative for SNO
-    NODE_SELECTOR='node-role.kubernetes.io/master: ""'
-    PROFILE_NAME="sno-low-latency-profile"
-    echo "📝 SNO: Using conservative HugePages (1GB) and master node selector"
-elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
-    HUGEPAGES_COUNT=2    # Standard for dedicated workers
-    NODE_SELECTOR='node-role.kubernetes.io/worker-rt: ""'
-    PROFILE_NAME="worker-low-latency-profile"
-    echo "📝 Multi-Node: Using standard HugePages (2GB) and worker-rt selector"
-else
-    HUGEPAGES_COUNT=1    # Conservative for multi-master
-    NODE_SELECTOR='node-role.kubernetes.io/master-rt: ""'
-    PROFILE_NAME="master-low-latency-profile"
-    echo "📝 Multi-Master: Using conservative HugePages (1GB) and master-rt selector"
-fi
-
-echo ""
-echo "🚀 Creating Performance Profile: $PROFILE_NAME"
-
-# Create the Performance Profile with dynamic configuration
-cat << EOF | oc apply -f -
-apiVersion: performance.openshift.io/v2
-kind: PerformanceProfile
-metadata:
-  name: $PROFILE_NAME
-  labels:
-    cluster-type: "$CLUSTER_TYPE"
-spec:
-  cpu:
-    isolated: "$ISOLATED_CPUS"
-    reserved: "$RESERVED_CPUS"
-  hugepages:
-    defaultHugepagesSize: 1G
-    pages:
-    - count: $HUGEPAGES_COUNT
-      size: 1G
-  nodeSelector:
-    $NODE_SELECTOR
-  numa:
-    topologyPolicy: "single-numa-node"
-  realTimeKernel:
-    enabled: true
-  additionalKernelArgs:
-  - "nosmt"
-  - "nohz_full=$ISOLATED_CPUS"
-  - "rcu_nocbs=$ISOLATED_CPUS"
-EOF
-
-echo "✅ Performance Profile created successfully!"
-
-# Save profile name for later use
-echo "PROFILE_NAME=$PROFILE_NAME" >> /tmp/cluster-config
+# Run the Performance Profile creation script
+bash ~/low-latency-performance-workshop/scripts/module04-create-performance-profile.sh
 ----
-
-. Verify the Performance Profile was created:
 +
-[source,bash,role=execute]
-----
-# Load cluster configuration
-source /tmp/cluster-config
+[TIP]
+====
+**What This Script Does:**
 
-echo "=== Performance Profile Verification ==="
-echo "Profile name: $PROFILE_NAME"
-echo ""
+* Loads and validates CPU allocation from previous step
+* Validates CPU ranges to prevent invalid PerformanceProfile
+* Determines HugePages allocation based on cluster type
+* Creates PerformanceProfile with proper node selector
+* Shows configuration before applying (requires confirmation)
 
-# Check if the profile was created
-if oc get performanceprofile $PROFILE_NAME >/dev/null 2>&1; then
-    echo "✅ Performance Profile created successfully!"
-    echo ""
-    echo "📋 Profile Summary:"
-    oc get performanceprofile $PROFILE_NAME -o jsonpath='{.metadata.name}{"\n"}CPU Reserved: {.spec.cpu.reserved}{"\n"}CPU Isolated: {.spec.cpu.isolated}{"\n"}HugePages: {.spec.hugepages.pages[0].count}x{.spec.hugepages.pages[0].size}{"\n"}RT Kernel: {.spec.realTimeKernel.enabled}{"\n"}'
-    echo ""
-    echo "🔍 Full Profile Configuration:"
-    oc get performanceprofile $PROFILE_NAME -o yaml
-else
-    echo "❌ Performance Profile creation failed!"
-    echo "🔍 Checking for errors..."
-    oc get events --sort-by='.lastTimestamp' | tail -10
-fi
+**Benefits of Using the Script:**
+
+* **Prevents Errors**: Validates CPU ranges before creating PerformanceProfile
+* **Interactive**: Shows configuration and asks for confirmation
+* **Clear Output**: Displays profile summary and next steps
+* **Error Handling**: Provides helpful error messages if creation fails
+
+**The script will ask for confirmation before applying the PerformanceProfile.**
+====
++
+[NOTE]
+====
+If you see an error like `invalid range "0--2"`, this means the CPU allocation calculation failed. Run the CPU allocation calculator script again:
+
+[source,bash]
 ----
+bash ~/low-latency-performance-workshop/scripts/module04-calculate-cpu-allocation.sh
+----
+
+Then retry the Performance Profile creation.
+====
 
 === Step 4: Monitor the Performance Profile Application
 
@@ -687,7 +533,37 @@ echo "   - Recommendations for optimization"
 
 === Detailed Performance Tuning Validation
 
-The workshop provides additional validation scripts to verify specific aspects of your performance tuning configuration.
+The workshop provides additional scripts to help with CPU allocation, Performance Profile creation, and validation.
+
+. *CPU Allocation Calculator* - Calculate optimal CPU allocation:
++
+[source,bash,role=execute]
+----
+# Calculate CPU allocation based on cluster type
+bash ~/low-latency-performance-workshop/scripts/module04-calculate-cpu-allocation.sh
+----
++
+This script:
++
+* Detects CPU count on target node
+* Calculates optimal reserved/isolated CPU allocation
+* Validates CPU ranges to prevent errors
+* Saves configuration for Performance Profile creation
+
+. *Performance Profile Creator* - Create validated Performance Profile:
++
+[source,bash,role=execute]
+----
+# Create Performance Profile with validated configuration
+bash ~/low-latency-performance-workshop/scripts/module04-create-performance-profile.sh
+----
++
+This script:
++
+* Validates CPU allocation from previous step
+* Prevents invalid CPU range errors
+* Shows configuration before applying
+* Requires confirmation for safety
 
 . *Performance Tuning Validator* - Comprehensive validation of Performance Profile:
 +
