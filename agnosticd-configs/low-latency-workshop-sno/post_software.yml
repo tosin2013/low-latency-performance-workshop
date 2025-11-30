@@ -1,0 +1,360 @@
+---
+# Post-software configuration - RHACM Integration
+# Based on proven pattern from hybrid-cloud-binder config
+
+- name: Step 003 Post Software Configuration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  tags:
+    - step003
+    - post_software
+  
+  tasks:
+    - name: Display post-software phase
+      debug:
+        msg:
+          - "Post-software configuration for {{ guid }}"
+          - "RHACM Auto-Import: {{ auto_import_to_rhacm | default(false) }}"
+    
+    - name: RHACM Integration (RHPDS Mode)
+      when:
+        - auto_import_to_rhacm | default(false) | bool
+        - rhacm_hub_api is defined
+        - rhacm_hub_kubeconfig is defined
+      block:
+        - name: Verify Hub Cluster Access
+          kubernetes.core.k8s_info:
+            kind: Namespace
+            name: open-cluster-management
+            api_version: v1
+            host: "{{ rhacm_hub_api }}"
+            kubeconfig: "{{ rhacm_hub_kubeconfig }}"
+            validate_certs: false
+          register: __r_hub
+          retries: 10
+          delay: 5
+          until:
+            - __r_hub.resources is defined
+            - __r_hub.resources | length > 0
+        
+        - name: Get SNO cluster details
+          set_fact:
+            __sno_api_url: "https://api.{{ guid }}{{ subdomain_base_suffix }}:6443"
+            # FIXED: host-ocp4-installer saves kubeconfig with env_type_guid prefix
+            __sno_kubeconfig: "{{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig"
+            __managed_cluster_name: "workshop-{{ student_name }}"
+        
+        - name: Wait for SNO Cluster to be Ready
+          kubernetes.core.k8s_info:
+            kind: Node
+            api_version: v1
+            host: "{{ __sno_api_url }}"
+            kubeconfig: "{{ __sno_kubeconfig }}"
+            validate_certs: false
+          register: __r_sno
+          retries: 240
+          delay: 15
+          until:
+            - __r_sno.resources is defined
+            - __r_sno.resources | length > 0
+        
+        # Fix pull-secret propagation issue
+        # This ensures the global pull-secret is properly distributed to all namespaces
+        # See: https://docs.openshift.com/container-platform/4.20/openshift_images/managing_images/using-image-pull-secrets.html
+        - name: Ensure pull-secret is propagated to marketplace namespace
+          block:
+            - name: Wait for marketplace namespace to be ready
+              kubernetes.core.k8s_info:
+                kind: Namespace
+                name: openshift-marketplace
+                api_version: v1
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+              register: __r_marketplace_ns
+              retries: 30
+              delay: 10
+              until:
+                - __r_marketplace_ns.resources is defined
+                - __r_marketplace_ns.resources | length > 0
+                - __r_marketplace_ns.resources[0].status.phase == "Active"
+            
+            - name: Check if marketplace pods exist and their status
+              kubernetes.core.k8s_info:
+                kind: Pod
+                namespace: openshift-marketplace
+                api_version: v1
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+              register: __r_marketplace_pods
+            
+            - name: Check for ImagePullBackOff in marketplace pods
+              set_fact:
+                __has_image_pull_issues: >-
+                  {{ __r_marketplace_pods.resources |
+                     selectattr('status.containerStatuses', 'defined') |
+                     map(attribute='status.containerStatuses') |
+                     flatten |
+                     selectattr('state.waiting', 'defined') |
+                     selectattr('state.waiting.reason', 'defined') |
+                     selectattr('state.waiting.reason', 'in', ['ImagePullBackOff', 'ErrImagePull']) |
+                     list | length > 0 }}
+            
+            - name: Display marketplace pod health status
+              debug:
+                msg:
+                  - "Marketplace pods total: {{ __r_marketplace_pods.resources | length }}"
+                  - "Pods with image pull issues: {{ __has_image_pull_issues }}"
+                  - "Will apply pull-secret fix: {{ __has_image_pull_issues or (__r_marketplace_pods.resources | length == 0) }}"
+            
+            - name: Get global pull-secret from openshift-config
+              when: __has_image_pull_issues or (__r_marketplace_pods.resources | length == 0)
+              kubernetes.core.k8s_info:
+                kind: Secret
+                name: pull-secret
+                namespace: openshift-config
+                api_version: v1
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+              register: __r_pull_secret
+            
+            - name: Copy pull-secret to openshift-marketplace namespace
+              when: __has_image_pull_issues or (__r_marketplace_pods.resources | length == 0)
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: pull-secret
+                    namespace: openshift-marketplace
+                  data: "{{ __r_pull_secret.resources[0].data }}"
+                  type: kubernetes.io/dockerconfigjson
+            
+            - name: Link pull-secret to marketplace serviceaccounts
+              when: __has_image_pull_issues or (__r_marketplace_pods.resources | length == 0)
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: v1
+                  kind: ServiceAccount
+                  metadata:
+                    name: "{{ item }}"
+                    namespace: openshift-marketplace
+                  imagePullSecrets:
+                    - name: pull-secret
+              loop:
+                - redhat-operators
+                - certified-operators
+                - community-operators
+                - redhat-marketplace
+              ignore_errors: true  # Continue if serviceaccount doesn't exist yet
+            
+            - name: Copy pull-secret to open-cluster-management-agent namespace (for RHACM)
+              when: __has_image_pull_issues or (__r_marketplace_pods.resources | length == 0)
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: v1
+                  kind: Namespace
+                  metadata:
+                    name: open-cluster-management-agent
+              ignore_errors: true  # Namespace might already exist
+            
+            - name: Ensure pull-secret exists in RHACM agent namespace
+              when: __has_image_pull_issues or (__r_marketplace_pods.resources | length == 0)
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: pull-secret
+                    namespace: open-cluster-management-agent
+                  data: "{{ __r_pull_secret.resources[0].data }}"
+                  type: kubernetes.io/dockerconfigjson
+              ignore_errors: true  # Might not be needed yet
+        
+        - name: Create namespace on hub for SNO
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rhacm_hub_kubeconfig }}"
+            validate_certs: false
+            state: present
+            kind: Namespace
+            name: "{{ __managed_cluster_name }}"
+            api_version: v1
+        
+        # Read SNO kubeconfig for auto-import
+        - name: Read SNO kubeconfig content
+          slurp:
+            src: "{{ __sno_kubeconfig }}"
+          register: __r_sno_kubeconfig
+        
+        - name: Import SNO to Hub (Create ManagedCluster, auto-import-secret, KlusterletAddonConfig)
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rhacm_hub_kubeconfig }}"
+            validate_certs: false
+            state: present
+            definition: "{{ item }}"
+          loop:
+            # 1. ManagedCluster resource
+            - apiVersion: cluster.open-cluster-management.io/v1
+              kind: ManagedCluster
+              metadata:
+                name: "{{ __managed_cluster_name }}"
+                labels: "{{ cluster_labels | default({'cloud': 'auto-detect', 'vendor': 'auto-detect'}) }}"
+              spec:
+                hubAcceptsClient: true
+            
+            # 2. auto-import-secret (contains SNO kubeconfig)
+            - apiVersion: v1
+              kind: Secret
+              metadata:
+                name: auto-import-secret
+                namespace: "{{ __managed_cluster_name }}"
+              stringData:
+                autoImportRetry: "5"
+                kubeconfig: "{{ __r_sno_kubeconfig.content | b64decode }}"
+              type: Opaque
+            
+            # 3. KlusterletAddonConfig (enables RHACM features)
+            - apiVersion: agent.open-cluster-management.io/v1
+              kind: KlusterletAddonConfig
+              metadata:
+                name: "{{ __managed_cluster_name }}"
+                namespace: "{{ __managed_cluster_name }}"
+              spec:
+                clusterName: "{{ __managed_cluster_name }}"
+                clusterNamespace: "{{ __managed_cluster_name }}"
+                clusterLabels: "{{ cluster_labels | default({'cloud': 'auto-detect', 'vendor': 'auto-detect'}) }}"
+                applicationManager:
+                  enabled: true
+                certPolicyController:
+                  enabled: true
+                iamPolicyController:
+                  enabled: true
+                policyController:
+                  enabled: true
+                searchCollector:
+                  enabled: true
+          register: __r_import_sno
+          retries: 240
+          delay: 15
+        
+        - name: Wait for SNO cluster to join RHACM
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ rhacm_hub_kubeconfig }}"
+            validate_certs: false
+            api_version: cluster.open-cluster-management.io/v1
+            kind: ManagedCluster
+            name: "{{ __managed_cluster_name }}"
+            namespace: "{{ __managed_cluster_name }}"
+          register: __r_wait_sno
+          retries: 240
+          delay: 15
+          until:
+            - __r_wait_sno.resources is defined
+            - __r_wait_sno.resources | length | int > 0
+            - __r_wait_sno.resources[0].status is defined
+            - __r_wait_sno.resources[0].status.conditions is defined
+            - ( __r_wait_sno.resources[0].status | to_json | from_json |
+                json_query('conditions[?type == `ManagedClusterConditionAvailable`].status') | join ) == "True"
+        
+        - name: Create ManagedClusterSet binding (if managedclusterset defined)
+          kubernetes.core.k8s:
+            kubeconfig: "{{ rhacm_hub_kubeconfig }}"
+            validate_certs: false
+            state: present
+            definition:
+              apiVersion: cluster.open-cluster-management.io/v1beta2
+              kind: ManagedClusterSetBinding
+              metadata:
+                name: "{{ managedclusterset }}"
+                namespace: "{{ __managed_cluster_name }}"
+              spec:
+                clusterSet: "{{ managedclusterset }}"
+          ignore_errors: yes
+          when:
+            - managedclusterset is defined
+        
+        - name: Display import success
+          debug:
+            msg:
+              - "✓ SNO cluster successfully imported to RHACM!"
+              - "ManagedCluster: {{ __managed_cluster_name }}"
+              - "Status: Ready"
+              - "Verify: oc get managedcluster {{ __managed_cluster_name }}"
+      
+      rescue:
+        - name: RHACM import failed
+          debug:
+            msg:
+              - "⚠ RHACM import failed/timed out"
+              - "Check logs and RHACM status"
+              - "SNO cluster is still accessible via kubeconfig"
+    
+    - name: Standalone Mode Information
+      debug:
+        msg:
+          - "Standalone mode - no RHACM integration"
+          - "Access SNO directly via kubeconfig"
+          - "Kubeconfig: {{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig"
+      when: not (auto_import_to_rhacm | default(false) | bool)
+    
+    - name: Create kubeconfig symlink for convenience
+      delegate_to: localhost
+      become: false
+      file:
+        src: "{{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig"
+        dest: "{{ output_dir }}/kubeconfig"
+        state: link
+      when: 
+        - output_dir is defined
+        - agnosticd_save_output_dir | default(true) | bool
+    
+    - name: Save deployment summary
+      copy:
+        content: |
+          Low-Latency Workshop SNO Deployment Summary
+          ==========================================
+          
+          GUID: {{ guid }}
+          Student: {{ student_name }}
+          Deployment Mode: {{ 'RHPDS (with RHACM)' if (auto_import_to_rhacm | default(false)) else 'Standalone' }}
+          
+          OpenShift Details:
+            Version: {{ ocp_version }}
+            API URL: https://api.{{ guid }}{{ subdomain_base_suffix }}:6443
+            Console: https://console-openshift-console.apps.{{ guid }}{{ subdomain_base_suffix }}
+            Kubeconfig: {{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig
+          
+          {% if auto_import_to_rhacm | default(false) %}
+          RHACM Integration:
+            Hub API: {{ rhacm_hub_api }}
+            ManagedCluster: workshop-{{ student_name }}
+            Verify: oc get managedcluster workshop-{{ student_name }}
+          {% endif %}
+          
+          Next Steps:
+            1. oc --kubeconfig={{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig get nodes
+            2. oc --kubeconfig={{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig get co
+          {% if auto_import_to_rhacm | default(false) %}
+            3. oc get managedcluster workshop-{{ student_name }}
+          {% endif %}
+        dest: "{{ output_dir }}/deployment-summary.txt"

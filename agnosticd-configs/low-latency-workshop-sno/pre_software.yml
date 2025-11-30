@@ -1,0 +1,19 @@
+---
+- name: Step 003 - Pre Software (SNO)
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  tags:
+  - step003
+  - pre_software
+  tasks:
+  - name: Print pre-software message
+    ansible.builtin.debug:
+      msg: "Pre-Software Steps for SNO cluster {{ guid }}"
+
+  - name: Ensure output directory exists
+    ansible.builtin.file:
+      path: "{{ output_dir }}"
+      state: directory
+      mode: '0755'
