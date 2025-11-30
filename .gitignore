@@ -28,3 +28,69 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# ═══════════════════════════════════════════════════════════
+# Developer Artifacts (Added by cleanup script)
+# ═══════════════════════════════════════════════════════════
+dev-notes/
+*.log
+ansible-navigator.log
+
+# Temporary deployment files
+/tmp/
+.ansible/
+agnosticd-output/
+
+# AWS and OpenShift secrets
+secrets-*.yml
+secrets-*.yaml
+*-secrets.yml
+*-secrets.yaml
+*.secret
+pull-secret*.json
+pull-secret*.txt
+.aws/credentials
+.aws/config
+
+# SSH Keys
+*.pem
+*.key
+ssh_provision_*
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# Kubeconfig files (unless intentionally versioned)
+*kubeconfig*
+*kube-config*
+.kube/
+
+# Session and status files
+SESSION_*.md
+STATUS_*.md
+*_SUMMARY.txt
+
+# Passwords and tokens
+*password*
+*token*
+*.auth
+
+# Deployment-specific
+test-*/
+workshop-student*/
+
+# Documentation that may contain sensitive info
+BASTION_DEPLOYMENT_AUDIT.md
+CLUSTER_ACCESS_INFO.md
+DEPLOYMENT_AUDIT.md
+
+# macOS
+.DS_Store
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+PULL_SECRET_ROOT_CAUSE.md
