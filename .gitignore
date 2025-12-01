@@ -28,3 +28,26 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+# ═══════════════════════════════════════════════════════════
+# Developer Artifacts (Added by cleanup script)
+# ═══════════════════════════════════════════════════════════
+dev-notes/
+*.log
+ansible-navigator.log
+
+# Temporary deployment files
+/tmp/
+.ansible/
+agnosticd-output/
+
+# AWS and OpenShift secrets
+secrets-*.yml
+*.secret
+pull-secret*.json
+.aws/credentials
+
+# Session and status files
+SESSION_*.md
+STATUS_*.md
+*_SUMMARY.txt
+
