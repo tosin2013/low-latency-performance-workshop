@@ -48,6 +48,10 @@ components:
         - name: WORKSHOP_HOME
           value: /projects/workshop
         
+        # Add local bin to PATH for kube-burner and other tools
+        - name: PATH
+          value: /home/user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        
         # Ansible configuration
         - name: ANSIBLE_HOST_KEY_CHECKING
           value: "False"
@@ -223,6 +227,36 @@ commands:
       group:
         kind: run
 
+  # Install kube-burner
+  - id: install-kube-burner
+    exec:
+      label: "Install kube-burner"
+      component: tools
+      workingDir: /home/user
+      commandLine: |
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Installing kube-burner v1.17.5                            ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        if command -v kube-burner &> /dev/null; then
+          echo "✓ kube-burner already installed"
+          kube-burner version
+        else
+          echo "Downloading kube-burner..."
+          mkdir -p ~/kube-burner
+          cd ~/kube-burner
+          curl -sL https://github.com/kube-burner/kube-burner/releases/download/v1.17.5/kube-burner-V1.17.5-linux-x86_64.tar.gz -o kube-burner.tar.gz
+          tar -xzf kube-burner.tar.gz
+          chmod +x kube-burner
+          mv kube-burner /home/user/.local/bin/ 2>/dev/null || mkdir -p /home/user/.local/bin && mv kube-burner /home/user/.local/bin/
+          rm -rf ~/kube-burner
+          echo ""
+          echo "✓ kube-burner installed successfully!"
+          /home/user/.local/bin/kube-burner version
+        fi
+      group:
+        kind: build
+
   # Run kube-burner baseline test
   - id: run-baseline-test
     exec:
@@ -231,10 +265,17 @@ commands:
       workingDir: /projects/workshop/gitops/kube-burner-configs
       commandLine: |
         echo "Running kube-burner baseline test..."
-        if [ -f run-test.sh ]; then
-          ./run-test.sh baseline
+        export PATH=$PATH:/home/user/.local/bin
+        if command -v kube-burner &> /dev/null; then
+          if [ -f run-test.sh ]; then
+            ./run-test.sh baseline
+          else
+            echo "Test script not found. Running manual baseline test..."
+            cd ~/kube-burner-configs 2>/dev/null || mkdir -p ~/kube-burner-configs && cd ~/kube-burner-configs
+            kube-burner init -c /projects/workshop/gitops/kube-burner-configs/baseline-config.yml --log-level=info
+          fi
         else
-          echo "Test script not found"
+          echo "kube-burner not found. Run 'Install kube-burner' first."
         fi
       group:
         kind: run
@@ -242,4 +283,5 @@ commands:
 # Events for workspace lifecycle
 events:
   postStart:
+    - install-kube-burner
     - check-environment
