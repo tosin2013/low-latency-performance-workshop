@@ -79,6 +79,99 @@ components:
 
 # Commands available in the workspace
 commands:
+  # Cluster safety check - ensures user is on SNO, not hub cluster
+  - id: check-cluster-safety
+    exec:
+      label: "0. Check Cluster Safety"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Cluster Safety Check                                      ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        
+        # Check if logged in
+        if ! oc whoami &>/dev/null; then
+          echo "⚠ Not logged into any cluster"
+          echo ""
+          echo "Please login to your SNO (target) cluster:"
+          echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
+          exit 0
+        fi
+        
+        CURRENT_SERVER=$(oc whoami --show-server 2>/dev/null)
+        CURRENT_USER=$(oc whoami 2>/dev/null)
+        
+        echo "Current Context:"
+        echo "  Server: $CURRENT_SERVER"
+        echo "  User: $CURRENT_USER"
+        echo ""
+        
+        # Check for hub cluster indicators
+        IS_HUB=false
+        
+        # Check 1: RHACM ManagedCluster CRD exists (hub has this)
+        if oc get crd managedclusters.cluster.open-cluster-management.io &>/dev/null; then
+          # Check if there are managed clusters (hub manages others)
+          MANAGED_COUNT=$(oc get managedclusters --no-headers 2>/dev/null | wc -l)
+          if [ "$MANAGED_COUNT" -gt "0" ]; then
+            IS_HUB=true
+          fi
+        fi
+        
+        # Check 2: Dev Spaces namespace exists (hub usually has this)
+        if oc get namespace openshift-devspaces &>/dev/null; then
+          # If devspaces exists AND managedclusters exist, likely hub
+          if oc get crd managedclusters.cluster.open-cluster-management.io &>/dev/null; then
+            IS_HUB=true
+          fi
+        fi
+        
+        # Check 3: Cluster name contains "hub" or common hub patterns
+        if echo "$CURRENT_SERVER" | grep -qiE "(hub|rhacm|acm)"; then
+          IS_HUB=true
+        fi
+        
+        # Check 4: Single Node OpenShift check (SNO has only 1 node with master role)
+        NODE_COUNT=$(oc get nodes --no-headers 2>/dev/null | wc -l)
+        MASTER_WORKER=$(oc get nodes --no-headers 2>/dev/null | grep -c "master.*worker\|worker.*master" || echo "0")
+        
+        if [ "$IS_HUB" = true ]; then
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║  ⚠️  WARNING: YOU ARE ON THE HUB CLUSTER!                   ║"
+          echo "╠════════════════════════════════════════════════════════════╣"
+          echo "║  Workshop modules should run on your SNO (target) cluster  ║"
+          echo "║  Running tests here could affect the management cluster!   ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "Please switch to your SNO cluster:"
+          echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
+          echo ""
+          echo "To find your SNO cluster credentials, check:"
+          echo "  cat /home/user/sno-info/SNO_API 2>/dev/null"
+          echo "  cat /home/user/sno-info/SNO_PASSWORD 2>/dev/null"
+          exit 1
+        elif [ "$NODE_COUNT" -eq "1" ] || [ "$MASTER_WORKER" -gt "0" ]; then
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║  ✅ Connected to SNO (Single Node OpenShift) cluster       ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "Node count: $NODE_COUNT"
+          oc get nodes
+        else
+          echo "╔════════════════════════════════════════════════════════════╗"
+          echo "║  ⚠️  CLUSTER TYPE UNCLEAR                                   ║"
+          echo "╚════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "Node count: $NODE_COUNT"
+          echo "Please verify this is your target cluster (not the hub)."
+          oc get nodes
+        fi
+      group:
+        kind: run
+        isDefault: true
+
   # Verification commands
   - id: verify-sno-access
     exec:
@@ -101,12 +194,11 @@ commands:
         else
           echo "✗ Kubeconfig not found"
           echo ""
-          echo "To login manually, run:"
+          echo "To login manually to your SNO cluster (NOT the hub!):"
           echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
         fi
       group:
         kind: run
-        isDefault: true
 
   - id: verify-ssh-access
     exec:
@@ -166,6 +258,19 @@ commands:
       workingDir: /projects/workshop
       commandLine: |
         echo "Running Module 02 RHACM Setup..."
+        echo ""
+        
+        # Safety check - Module 02 actually runs on hub for RHACM setup
+        # This is one of the few modules that needs hub access
+        if ! oc whoami &>/dev/null; then
+          echo "❌ Not logged into any cluster. Please login first."
+          exit 1
+        fi
+        
+        echo "ℹ️  Note: Module 02 configures RHACM on the hub cluster."
+        echo "   Make sure you're logged into the correct cluster for this step."
+        echo ""
+        
         if [ -f workshop-scripts/09-setup-module02-rhacm.sh ]; then
           ./workshop-scripts/09-setup-module02-rhacm.sh
         else
@@ -264,8 +369,39 @@ commands:
       component: tools
       workingDir: /projects/workshop/gitops/kube-burner-configs
       commandLine: |
-        echo "Running kube-burner baseline test..."
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Module 03: Baseline Performance Test                      ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
         export PATH=$PATH:/home/user/.local/bin
+        
+        # Safety check - ensure we're on SNO, not hub
+        if ! oc whoami &>/dev/null; then
+          echo "❌ Not logged into any cluster. Please login to your SNO cluster first."
+          exit 1
+        fi
+        
+        # Check for hub cluster indicators
+        if oc get crd managedclusters.cluster.open-cluster-management.io &>/dev/null; then
+          MANAGED_COUNT=$(oc get managedclusters --no-headers 2>/dev/null | wc -l)
+          if [ "$MANAGED_COUNT" -gt "0" ]; then
+            echo "╔════════════════════════════════════════════════════════════╗"
+            echo "║  ❌ ERROR: YOU ARE ON THE HUB CLUSTER!                     ║"
+            echo "╠════════════════════════════════════════════════════════════╣"
+            echo "║  Performance tests MUST run on your SNO (target) cluster   ║"
+            echo "║  Running tests on the hub could affect management ops!     ║"
+            echo "╚════════════════════════════════════════════════════════════╝"
+            echo ""
+            echo "Please switch to your SNO cluster first:"
+            echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
+            exit 1
+          fi
+        fi
+        
+        echo "✓ Cluster check passed - proceeding with baseline test"
+        echo "  Server: $(oc whoami --show-server)"
+        echo ""
+        
         if command -v kube-burner &> /dev/null; then
           if [ -f run-test.sh ]; then
             ./run-test.sh baseline
@@ -284,4 +420,5 @@ commands:
 events:
   postStart:
     - install-kube-burner
+    - check-cluster-safety
     - check-environment
