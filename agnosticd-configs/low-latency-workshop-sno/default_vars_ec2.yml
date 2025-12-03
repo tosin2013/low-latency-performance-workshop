@@ -33,7 +33,7 @@ instances:
     # SOLUTION: Added RHEL97GOLD to AgnosticD's AMI mapping table
     # ~/agnosticd/ansible/roles-infra/infra-ec2-template-generate/defaults/main.yml
     # CloudFormation uses Fn::FindInMap, so we need a symbolic name, not direct AMI
-    image: RHEL97GOLD  # Resolves to ami-035032ea878eca201 (RHEL 9.7.0)
+    image: RHEL90GOLD  # Resolves to ami-035032ea878eca201 (RHEL 9.7.0)
     tags:
       - key: AnsibleGroup
         value: bastions

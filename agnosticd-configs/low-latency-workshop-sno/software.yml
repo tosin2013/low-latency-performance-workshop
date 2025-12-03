@@ -12,6 +12,45 @@
       ansible.builtin.debug:
         msg: "Configuring bastion host for SNO deployment"
 
+    # RHEL 9 SSHD Fix: Remove ALL sshd_config.d files that conflict with AgnosticD
+    # These drop-in configs override sshd_config settings and cause restart failures
+    - name: Remove all sshd_config.d drop-in files (RHEL 9 fix)
+      ansible.builtin.shell: |
+        rm -f /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
+      changed_when: false
+
+    - name: Comment out Include directive in sshd_config (RHEL 9 fix)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^Include /etc/ssh/sshd_config.d/\*\.conf'
+        line: '# Include /etc/ssh/sshd_config.d/*.conf  # Disabled for AgnosticD compatibility'
+        state: present
+      ignore_errors: true
+
+    - name: Ensure PasswordAuthentication is set correctly
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication yes'
+        state: present
+
+    - name: Validate sshd config
+      ansible.builtin.command: sshd -t
+      register: sshd_validate
+      changed_when: false
+      failed_when: false
+
+    - name: Show sshd validation errors if any
+      ansible.builtin.debug:
+        var: sshd_validate
+      when: sshd_validate.rc != 0
+
+    - name: Restart SSHD after RHEL 9 fixes
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
+      when: sshd_validate.rc == 0
+
     - name: Install common packages
       ansible.builtin.package:
         name: "{{ common_packages }}"

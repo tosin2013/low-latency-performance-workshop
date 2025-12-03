@@ -1,0 +1,221 @@
+---
+# User Documentation Workload
+# Builds and deploys personalized Antora documentation per user
+# Called in a loop with user_num variable
+# Idempotent - safe to re-run
+
+- name: Set user facts
+  ansible.builtin.set_fact:
+    _user_name: "{{ workshop_user_base }}{{ user_num }}"
+    _user_namespace: "{{ workshop_namespace_prefix }}{{ workshop_user_base }}{{ user_num }}"
+    _sno_guid: "workshop-{{ workshop_user_base }}{{ user_num }}"
+
+- name: Set documentation facts
+  ansible.builtin.set_fact:
+    _docs_deployment_name: "workshop-docs"
+    _docs_service_name: "workshop-docs"
+    _docs_route_name: "docs-{{ _user_name }}"
+    _docs_configmap_name: "docs-config-{{ _user_name }}"
+
+- name: Get cluster ingress domain
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: _cluster_ingress
+
+- name: Set cluster domain
+  ansible.builtin.set_fact:
+    _cluster_domain: "{{ _cluster_ingress.resources[0].spec.domain | default('apps.cluster.local') }}"
+  when: _cluster_ingress.resources | length > 0
+
+- name: Create documentation ConfigMap with user-specific values
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ _docs_configmap_name }}"
+        namespace: "{{ _user_namespace }}"
+        labels:
+          workshop: low-latency
+          student: "{{ _user_name }}"
+          managed-by: agnosticd
+      data:
+        # User-specific Antora attributes
+        GUID: "{{ _sno_guid }}"
+        STUDENT_NAME: "{{ _user_name }}"
+        CLUSTER_API: "https://api.{{ _sno_guid }}.{{ subdomain_base_suffix | regex_replace('^\\.', '') }}:6443"
+        CLUSTER_CONSOLE: "https://console-openshift-console.apps.{{ _sno_guid }}.{{ subdomain_base_suffix | regex_replace('^\\.', '') }}"
+        SSH_USER: "ec2-user"
+        SSH_COMMAND: "ssh -i ~/.ssh/id_rsa ec2-user@bastion.{{ _sno_guid }}.{{ subdomain_base_suffix | regex_replace('^\\.', '') }}"
+
+- name: Create documentation Deployment
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ _docs_deployment_name }}"
+        namespace: "{{ _user_namespace }}"
+        labels:
+          workshop: low-latency
+          student: "{{ _user_name }}"
+          app: workshop-docs
+          managed-by: agnosticd
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: workshop-docs
+            student: "{{ _user_name }}"
+        template:
+          metadata:
+            labels:
+              app: workshop-docs
+              student: "{{ _user_name }}"
+              workshop: low-latency
+          spec:
+            containers:
+              - name: httpd
+                image: "{{ workshop_docs_image | default('registry.access.redhat.com/ubi9/httpd-24:1-301') }}"
+                ports:
+                  - containerPort: 8080
+                    protocol: TCP
+                resources:
+                  requests:
+                    cpu: 50m
+                    memory: 64Mi
+                  limits:
+                    cpu: 200m
+                    memory: 256Mi
+                volumeMounts:
+                  - name: docs-content
+                    mountPath: /var/www/html
+                    readOnly: true
+                livenessProbe:
+                  httpGet:
+                    path: /index.html
+                    port: 8080
+                  initialDelaySeconds: 10
+                  periodSeconds: 30
+                readinessProbe:
+                  httpGet:
+                    path: /index.html
+                    port: 8080
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+            volumes:
+              - name: docs-content
+                emptyDir: {}
+            initContainers:
+              # Init container to build personalized docs
+              - name: build-docs
+                image: docker.io/antora/antora:latest
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    # Clone workshop repo
+                    cd /tmp
+                    git clone --depth 1 -b {{ workshop_repo_branch | default('main') }} {{ workshop_repo_url }}
+                    cd low-latency-performance-workshop
+                    
+                    # Update antora.yml with user-specific values
+                    sed -i "s/guid: my-guid/guid: {{ _sno_guid }}/g" content/antora.yml
+                    sed -i "s|cluster_api:.*|cluster_api: https://api.{{ _sno_guid }}.{{ subdomain_base_suffix | regex_replace('^\\.', '') }}:6443|g" content/antora.yml
+                    sed -i "s|cluster_console:.*|cluster_console: https://console-openshift-console.apps.{{ _sno_guid }}.{{ subdomain_base_suffix | regex_replace('^\\.', '') }}|g" content/antora.yml
+                    
+                    # Build Antora site
+                    antora --stacktrace default-site.yml
+                    
+                    # Copy to output volume
+                    cp -r www/* /output/
+                    
+                    echo "Documentation built for {{ _user_name }}"
+                volumeMounts:
+                  - name: docs-content
+                    mountPath: /output
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 512Mi
+                  limits:
+                    cpu: "1"
+                    memory: 1Gi
+
+- name: Create documentation Service
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ _docs_service_name }}"
+        namespace: "{{ _user_namespace }}"
+        labels:
+          workshop: low-latency
+          student: "{{ _user_name }}"
+          app: workshop-docs
+          managed-by: agnosticd
+      spec:
+        selector:
+          app: workshop-docs
+          student: "{{ _user_name }}"
+        ports:
+          - port: 8080
+            targetPort: 8080
+            protocol: TCP
+
+- name: Create documentation Route
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: "{{ _docs_route_name }}"
+        namespace: "{{ _user_namespace }}"
+        labels:
+          workshop: low-latency
+          student: "{{ _user_name }}"
+          app: workshop-docs
+          managed-by: agnosticd
+      spec:
+        host: "docs-{{ _user_name }}.{{ _cluster_domain }}"
+        to:
+          kind: Service
+          name: "{{ _docs_service_name }}"
+          weight: 100
+        port:
+          targetPort: 8080
+        tls:
+          termination: edge
+          insecureEdgeTerminationPolicy: Redirect
+
+- name: Wait for documentation pod to be ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ _user_namespace }}"
+    label_selectors:
+      - app=workshop-docs
+      - student={{ _user_name }}
+  register: _docs_pod
+  until:
+    - _docs_pod.resources | length > 0
+    - _docs_pod.resources[0].status.phase == "Running"
+  retries: 30
+  delay: 10
+  ignore_errors: true
+
+- name: Display documentation deployment status
+  ansible.builtin.debug:
+    msg:
+      - "✓ Documentation deployed for: {{ _user_name }}"
+      - "Namespace: {{ _user_namespace }}"
+      - "URL: https://docs-{{ _user_name }}.{{ _cluster_domain }}"
+      - "Status: {{ 'Ready' if _docs_pod.resources | length > 0 and _docs_pod.resources[0].status.phase == 'Running' else 'Deploying...' }}"
+
