@@ -1,0 +1,245 @@
+schemaVersion: 2.2.0
+metadata:
+  name: low-latency-workshop
+  displayName: Low-Latency Performance Workshop
+  description: |
+    Development workspace for the Low-Latency Performance Workshop for OpenShift.
+    Includes all necessary tools for working with OpenShift clusters and running
+    workshop exercises.
+  version: 1.0.0
+  tags:
+    - OpenShift
+    - Kubernetes
+    - Performance
+    - Low-Latency
+    - Workshop
+  icon: https://www.redhat.com/favicon.ico
+  language: Shell
+  projectType: workshop
+
+# Clone the workshop repository
+projects:
+  - name: workshop
+    git:
+      remotes:
+        origin: https://github.com/tosin2013/low-latency-performance-workshop.git
+      checkoutFrom:
+        revision: main
+
+# Main development container
+components:
+  - name: tools
+    container:
+      image: quay.io/devspaces/udi-rhel8:latest
+      memoryLimit: 4Gi
+      memoryRequest: 1Gi
+      cpuLimit: "2"
+      cpuRequest: 500m
+      mountSources: true
+      sourceMapping: /projects
+      
+      # Environment variables
+      env:
+        # Kubeconfig location (auto-mounted by Dev Spaces from labeled secret)
+        - name: KUBECONFIG
+          value: /home/user/.kube/config
+        
+        # Workshop configuration
+        - name: WORKSHOP_HOME
+          value: /projects/workshop
+        
+        # Ansible configuration
+        - name: ANSIBLE_HOST_KEY_CHECKING
+          value: "False"
+        
+        # Terminal colors
+        - name: TERM
+          value: xterm-256color
+
+      # Volume mounts for workshop artifacts
+      volumeMounts:
+        - name: workshop-data
+          path: /home/user/workshop-data
+      
+      # Endpoints for accessing services from workspace
+      endpoints:
+        - name: workshop-docs
+          targetPort: 8080
+          exposure: public
+          protocol: http
+
+  # Persistent volume for workshop data
+  - name: workshop-data
+    volume:
+      size: 2Gi
+
+# Commands available in the workspace
+commands:
+  # Verification commands
+  - id: verify-sno-access
+    exec:
+      label: "1. Verify SNO Cluster Access"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Verifying SNO Cluster Access                              ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        if [ -f /home/user/.kube/config ]; then
+          echo "✓ Kubeconfig found at /home/user/.kube/config"
+          echo ""
+          echo "Cluster Info:"
+          oc cluster-info 2>/dev/null || echo "⚠ Cannot connect to cluster yet"
+          echo ""
+          echo "Nodes:"
+          oc get nodes 2>/dev/null || echo "⚠ Cannot get nodes"
+        else
+          echo "✗ Kubeconfig not found"
+          echo "The SNO cluster may not be deployed yet."
+        fi
+      group:
+        kind: run
+        isDefault: true
+
+  - id: verify-ssh-access
+    exec:
+      label: "2. Verify SSH Key"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Verifying SSH Key                                         ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        if [ -f /home/user/.ssh/id_rsa ]; then
+          echo "✓ SSH key found at /home/user/.ssh/id_rsa"
+          chmod 600 /home/user/.ssh/id_rsa
+          echo ""
+          echo "SSH Key fingerprint:"
+          ssh-keygen -lf /home/user/.ssh/id_rsa 2>/dev/null || echo "Could not read key"
+        else
+          echo "✗ SSH key not found"
+          echo "The SNO cluster may not be deployed yet."
+        fi
+      group:
+        kind: run
+
+  - id: check-environment
+    exec:
+      label: "3. Check Workshop Environment"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Workshop Environment Check                                ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Tools Available:"
+        echo "  oc: $(oc version --client 2>/dev/null | head -1 || echo 'not found')"
+        echo "  kubectl: $(kubectl version --client 2>/dev/null | head -1 || echo 'not found')"
+        echo "  git: $(git --version 2>/dev/null || echo 'not found')"
+        echo "  yq: $(yq --version 2>/dev/null || echo 'not found')"
+        echo "  ansible: $(ansible --version 2>/dev/null | head -1 || echo 'not found')"
+        echo ""
+        echo "Environment Variables:"
+        echo "  KUBECONFIG: ${KUBECONFIG:-not set}"
+        echo "  WORKSHOP_HOME: ${WORKSHOP_HOME:-not set}"
+        echo ""
+        echo "Mounted Secrets:"
+        [ -f /home/user/.kube/config ] && echo "  ✓ Kubeconfig" || echo "  ✗ Kubeconfig (pending)"
+        [ -f /home/user/.ssh/id_rsa ] && echo "  ✓ SSH Key" || echo "  ✗ SSH Key (pending)"
+      group:
+        kind: run
+
+  # Module setup commands
+  - id: setup-module02
+    exec:
+      label: "Module 02: Setup RHACM"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo "Running Module 02 RHACM Setup..."
+        if [ -f workshop-scripts/09-setup-module02-rhacm.sh ]; then
+          ./workshop-scripts/09-setup-module02-rhacm.sh
+        else
+          echo "Setup script not found. Manual setup required."
+          echo "See: content/modules/ROOT/pages/module-02-rhacm-setup.adoc"
+        fi
+      group:
+        kind: run
+
+  # Build documentation locally
+  - id: build-docs-local
+    exec:
+      label: "Build Documentation (Local)"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo "Building Antora documentation..."
+        if [ -f utilities/lab-build ]; then
+          ./utilities/lab-build --skip-validation
+        else
+          echo "Build utility not found"
+        fi
+      group:
+        kind: build
+
+  # Serve documentation locally
+  - id: serve-docs
+    exec:
+      label: "Serve Documentation"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo "Starting documentation server on port 8080..."
+        if [ -d www ]; then
+          cd www && python3 -m http.server 8080
+        else
+          echo "Documentation not built yet. Run 'Build Documentation' first."
+        fi
+      group:
+        kind: run
+
+  # SSH to bastion
+  - id: ssh-bastion
+    exec:
+      label: "SSH to Bastion"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo "Connecting to bastion..."
+        if [ -f /home/user/.ssh/id_rsa ]; then
+          chmod 600 /home/user/.ssh/id_rsa
+          # Get bastion hostname from SNO info ConfigMap if available
+          BASTION_HOST=$(cat /home/user/sno-info/BASTION_HOST 2>/dev/null || echo "bastion.workshop-student1.example.com")
+          echo "Attempting SSH to: ec2-user@${BASTION_HOST}"
+          ssh -o StrictHostKeyChecking=no -i /home/user/.ssh/id_rsa ec2-user@${BASTION_HOST}
+        else
+          echo "SSH key not available yet"
+        fi
+      group:
+        kind: run
+
+  # Run kube-burner baseline test
+  - id: run-baseline-test
+    exec:
+      label: "Module 03: Run Baseline Test"
+      component: tools
+      workingDir: /projects/workshop/gitops/kube-burner-configs
+      commandLine: |
+        echo "Running kube-burner baseline test..."
+        if [ -f run-test.sh ]; then
+          ./run-test.sh baseline
+        else
+          echo "Test script not found"
+        fi
+      group:
+        kind: run
+
+# Events for workspace lifecycle
+events:
+  postStart:
+    - verify-sno-access
+    - check-environment
+
