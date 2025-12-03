@@ -33,7 +33,6 @@ spec:
     secondsOfInactivityBeforeIdling: 1800
     storage:
       pvcStrategy: per-user
-    defaultEditor: che-incubator/che-code/latest
   gitServices: {}
   networking:
     auth:

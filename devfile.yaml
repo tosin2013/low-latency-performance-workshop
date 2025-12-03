@@ -96,7 +96,9 @@ commands:
           oc get nodes 2>/dev/null || echo "⚠ Cannot get nodes"
         else
           echo "✗ Kubeconfig not found"
-          echo "The SNO cluster may not be deployed yet."
+          echo ""
+          echo "To login manually, run:"
+          echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
         fi
       group:
         kind: run
@@ -147,7 +149,7 @@ commands:
         echo "  WORKSHOP_HOME: ${WORKSHOP_HOME:-not set}"
         echo ""
         echo "Mounted Secrets:"
-        [ -f /home/user/.kube/config ] && echo "  ✓ Kubeconfig" || echo "  ✗ Kubeconfig (pending)"
+        [ -f /home/user/.kube/config ] && echo "  ✓ Kubeconfig" || echo "  ✗ Kubeconfig (login manually with 'oc login')"
         [ -f /home/user/.ssh/id_rsa ] && echo "  ✓ SSH Key" || echo "  ✗ SSH Key (pending)"
       group:
         kind: run
@@ -240,6 +242,4 @@ commands:
 # Events for workspace lifecycle
 events:
   postStart:
-    - verify-sno-access
     - check-environment
-
