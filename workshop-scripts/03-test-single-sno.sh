@@ -11,17 +11,25 @@
 
 set -e
 
-STUDENT_NAME=${1:-student1}
+STUDENT_NAME_RAW=${1:-student1}
 DEPLOYMENT_MODE=${2:-rhpds}  # rhpds or standalone
 AGNOSTICD_DIR=~/agnosticd
 WORKSHOP_DIR=/home/lab-user/low-latency-performance-workshop
 SECRETS_FILE=~/secrets-ec2.yml
 CONFIG_DIR=${WORKSHOP_DIR}/agnosticd-configs/low-latency-workshop-sno
 
+# IMPORTANT: Force lowercase for OpenShift cluster names (RFC 1123 requirement)
+STUDENT_NAME=$(echo "${STUDENT_NAME_RAW}" | tr '[:upper:]' '[:lower:]')
+
 echo "============================================"
 echo " Test SNO Deployment"
 echo "============================================"
 echo ""
+if [ "${STUDENT_NAME}" != "${STUDENT_NAME_RAW}" ]; then
+    echo "⚠ Student name converted to lowercase: ${STUDENT_NAME_RAW} → ${STUDENT_NAME}"
+    echo "  (OpenShift cluster names must be lowercase per RFC 1123)"
+    echo ""
+fi
 echo "Student: ${STUDENT_NAME}"
 echo "GUID: test-${STUDENT_NAME}"
 echo "Mode: ${DEPLOYMENT_MODE}"
@@ -155,7 +163,7 @@ export AWS_DEFAULT_REGION="${AWS_REGION}"
 ANSIBLE_NAVIGATOR_CMD="ansible-navigator run ansible/main.yml \
   --mode stdout \
   --pull-policy missing \
-  -vvv \
+  -v \
   --eev ${HOME}/.kube:/home/runner/.kube:z \
   --eev ${SECRETS_FILE}:/runner/secrets-ec2.yml:z \
   --eev ${HOME}/pull-secret.json:/runner/pull-secret.json:z \
