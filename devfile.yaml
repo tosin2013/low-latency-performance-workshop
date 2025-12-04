@@ -4,8 +4,8 @@ metadata:
   displayName: Low-Latency Performance Workshop
   description: |
     Development workspace for the Low-Latency Performance Workshop for OpenShift.
-    Includes all necessary tools for working with OpenShift clusters and running
-    workshop exercises.
+    Your SNO cluster credentials are automatically mounted.
+    Access your personalized documentation at: https://docs-{username}.apps.{cluster-domain}
   version: 1.0.0
   tags:
     - OpenShift
@@ -24,7 +24,7 @@ projects:
       remotes:
         origin: https://github.com/tosin2013/low-latency-performance-workshop.git
       checkoutFrom:
-        revision: main
+        revision: feat/deployment-automation
 
 # Main development container
 components:
@@ -64,10 +64,13 @@ components:
       volumeMounts:
         - name: workshop-data
           path: /home/user/workshop-data
+        # SNO info is mounted from ConfigMap (created by admin)
+        - name: sno-info
+          path: /home/user/sno-info
       
-      # Endpoints for accessing services from workspace
+      # Endpoints (for any local services if needed)
       endpoints:
-        - name: workshop-docs
+        - name: local-server
           targetPort: 8080
           exposure: public
           protocol: http
@@ -76,9 +79,93 @@ components:
   - name: workshop-data
     volume:
       size: 2Gi
+  
+  # SNO info volume (from ConfigMap created by workshop setup)
+  # This will be empty if the ConfigMap doesn't exist yet
+  - name: sno-info
+    volume:
+      size: 1Mi
 
 # Commands available in the workspace
 commands:
+  # Welcome message with user info and docs URL
+  - id: show-workshop-info
+    exec:
+      label: "★ Workshop Info & Docs URL"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo ""
+        echo "╔════════════════════════════════════════════════════════════════════╗"
+        echo "║     LOW-LATENCY PERFORMANCE WORKSHOP                               ║"
+        echo "╚════════════════════════════════════════════════════════════════════╝"
+        echo ""
+        
+        # Try to get cluster domain from current context
+        if oc whoami &>/dev/null; then
+          HUB_API=$(oc whoami --show-server 2>/dev/null || echo "unknown")
+          HUB_DOMAIN=$(echo "$HUB_API" | sed 's|https://api\.||' | sed 's|:6443||')
+          APPS_DOMAIN="apps.${HUB_DOMAIN}"
+        else
+          APPS_DOMAIN="apps.{your-cluster-domain}"
+        fi
+        
+        # Get username from DevWorkspace or namespace
+        if [ -n "$DEVWORKSPACE_NAMESPACE" ]; then
+          # Extract username from namespace (e.g., user1-devspaces -> user1)
+          USERNAME=$(echo "$DEVWORKSPACE_NAMESPACE" | sed 's/-devspaces$//')
+        else
+          USERNAME="{your-username}"
+        fi
+        
+        # Check for SNO info from mounted ConfigMap
+        if [ -f /home/user/sno-info/SNO_API_URL ]; then
+          SNO_API=$(cat /home/user/sno-info/SNO_API_URL)
+          SNO_CONSOLE=$(cat /home/user/sno-info/SNO_CONSOLE_URL 2>/dev/null || echo "")
+          SNO_READY="✅ Available"
+        else
+          SNO_API="https://api.workshop-${USERNAME}.{domain}:6443"
+          SNO_CONSOLE="https://console-openshift-console.apps.workshop-${USERNAME}.{domain}"
+          SNO_READY="⏳ Check with admin if SNO is deployed"
+        fi
+        
+        echo "  📚 YOUR PERSONALIZED DOCUMENTATION:"
+        echo "     https://docs-${USERNAME}.${APPS_DOMAIN}"
+        echo ""
+        echo "  ────────────────────────────────────────────────────────────────────"
+        echo ""
+        echo "  🖥️  YOUR SNO CLUSTER:"
+        echo "     API:     ${SNO_API}"
+        echo "     Console: ${SNO_CONSOLE}"
+        echo "     Status:  ${SNO_READY}"
+        echo ""
+        echo "  ────────────────────────────────────────────────────────────────────"
+        echo ""
+        echo "  📁 MOUNTED CREDENTIALS:"
+        if [ -f /home/user/.kube/config ] && ! grep -q "Placeholder" /home/user/.kube/config 2>/dev/null; then
+          echo "     ✅ Kubeconfig: /home/user/.kube/config"
+        else
+          echo "     ⏳ Kubeconfig: Pending (login manually with 'oc login')"
+        fi
+        if [ -f /home/user/.ssh/id_rsa ] && ! grep -q "Placeholder" /home/user/.ssh/id_rsa 2>/dev/null; then
+          echo "     ✅ SSH Key: /home/user/.ssh/id_rsa"
+        else
+          echo "     ⏳ SSH Key: Pending"
+        fi
+        echo ""
+        echo "  ────────────────────────────────────────────────────────────────────"
+        echo ""
+        echo "  🚀 QUICK START:"
+        echo "     1. Open your docs URL above in a new browser tab"
+        echo "     2. Run 'oc get nodes' to verify cluster access"
+        echo "     3. Follow the workshop modules in the docs"
+        echo ""
+        echo "╚════════════════════════════════════════════════════════════════════╝"
+        echo ""
+      group:
+        kind: run
+        isDefault: true
+
   # Cluster safety check - ensures user is on SNO, not hub cluster
   - id: check-cluster-safety
     exec:
@@ -280,34 +367,51 @@ commands:
       group:
         kind: run
 
-  # Build documentation locally
-  - id: build-docs-local
+  # Open documentation (served by OpenShift)
+  - id: open-docs
     exec:
-      label: "Build Documentation (Local)"
+      label: "📚 Open Workshop Documentation"
       component: tools
       workingDir: /projects/workshop
       commandLine: |
-        echo "Building Antora documentation..."
-        if [ -f utilities/lab-build ]; then
-          ./utilities/lab-build --skip-validation
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Workshop Documentation                                    ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Your personalized workshop documentation is served by OpenShift."
+        echo ""
+        
+        # Get username and cluster domain
+        if [ -n "$DEVWORKSPACE_NAMESPACE" ]; then
+          USERNAME=$(echo "$DEVWORKSPACE_NAMESPACE" | sed 's/-devspaces$//')
         else
-          echo "Build utility not found"
+          USERNAME="userN"
         fi
-      group:
-        kind: build
-
-  # Serve documentation locally
-  - id: serve-docs
-    exec:
-      label: "Serve Documentation"
-      component: tools
-      workingDir: /projects/workshop
-      commandLine: |
-        echo "Starting documentation server on port 8080..."
-        if [ -d www ]; then
-          cd www && python3 -m http.server 8080
+        
+        if oc whoami &>/dev/null; then
+          HUB_API=$(oc config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || oc whoami --show-server)
+          APPS_DOMAIN=$(echo "$HUB_API" | sed 's|https://api\.||' | sed 's|:6443||' | sed 's/^/apps./')
         else
-          echo "Documentation not built yet. Run 'Build Documentation' first."
+          APPS_DOMAIN="apps.{your-cluster}.{domain}"
+        fi
+        
+        DOCS_URL="https://docs-${USERNAME}.${APPS_DOMAIN}"
+        
+        echo "  📖 YOUR DOCS URL:"
+        echo ""
+        echo "     ${DOCS_URL}"
+        echo ""
+        echo "  ────────────────────────────────────────────────────────────"
+        echo ""
+        echo "  Open this URL in your browser to access the workshop content."
+        echo "  The documentation is personalized with your SNO cluster URLs."
+        echo ""
+        
+        # Check if docs route exists
+        if oc get route docs-${USERNAME} -n workshop-${USERNAME} &>/dev/null; then
+          echo "  ✅ Documentation is deployed and ready!"
+        else
+          echo "  ⚠️  Documentation route not found. Check with admin."
         fi
       group:
         kind: run
@@ -419,6 +523,6 @@ commands:
 # Events for workspace lifecycle
 events:
   postStart:
+    - show-workshop-info
     - install-kube-burner
     - check-cluster-safety
-    - check-environment
