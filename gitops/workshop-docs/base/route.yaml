@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: workshop-docs
+  labels:
+    app: workshop-docs
+    workshop: low-latency
+spec:
+  to:
+    kind: Service
+    name: workshop-docs
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
