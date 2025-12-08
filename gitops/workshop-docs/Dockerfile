@@ -28,20 +28,20 @@ RUN antora --stacktrace default-site.yml || \
      mkdir -p www && \
      echo "<html><body><h1>Workshop Docs for ${USER_NAME}</h1><p>Build in progress...</p></body></html>" > www/index.html)
 
-# Stage 2: Serve with httpd
-FROM registry.access.redhat.com/ubi9/httpd-24:1-301
+# Stage 2: Serve with nginx (simpler, no SSL issues)
+FROM registry.access.redhat.com/ubi9/nginx-124:1-18
 
 # Copy built docs from builder stage
-COPY --from=builder /antora/www /var/www/html/
+COPY --from=builder /antora/www /usr/share/nginx/html/
 
 # Labels
 LABEL io.k8s.display-name="Low-Latency Workshop Docs" \
       io.k8s.description="Personalized workshop documentation" \
       io.openshift.tags="workshop,documentation,antora"
 
-# httpd runs on port 8080 by default in UBI
+# nginx runs on port 8080 by default in UBI
 EXPOSE 8080
 
-# Default command (inherited from base image)
-CMD ["httpd", "-D", "FOREGROUND"]
+# Use default nginx command
+CMD ["nginx", "-g", "daemon off;"]
 
