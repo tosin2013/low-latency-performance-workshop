@@ -1,4 +1,4 @@
-schemaVersion: 2.2.0
+schemaVersion: 2.2.2
 metadata:
   name: low-latency-workshop
   displayName: Low-Latency Performance Workshop
@@ -16,6 +16,17 @@ metadata:
   icon: https://www.redhat.com/favicon.ico
   language: Shell
   projectType: workshop
+attributes:
+  controller.devfile.io/storage-type: per-user
+  # Use the che-code editor from DevWorkspaceTemplate
+  controller.devfile.io/editor-name: che-code
+  .vscode/extensions.json: |
+    {
+      "recommendations": [
+        "redhat.vscode-yaml",
+        "ms-kubernetes-tools.vscode-kubernetes-tools"
+      ]
+    }
 
 # Clone the workshop repository
 projects:
@@ -28,6 +39,8 @@ projects:
 
 # Main development container
 components:
+  # Note: che-code editor is injected automatically from DevWorkspaceTemplate
+  
   - name: tools
     container:
       image: quay.io/devspaces/udi-rhel8:latest
@@ -81,6 +94,8 @@ components:
   - name: workshop-data
     volume:
       size: 2Gi
+  
+  # Note: checode volume is provided by the che-code DevWorkspaceTemplate
 
 # Commands available in the workspace
 commands:
