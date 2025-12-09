@@ -64,9 +64,11 @@ components:
       volumeMounts:
         - name: workshop-data
           path: /home/user/workshop-data
-        # SNO info is mounted from ConfigMap (created by admin)
-        - name: sno-info
-          path: /home/user/sno-info
+        # Note: SNO info ConfigMap is auto-mounted by Dev Spaces via labels:
+        #   controller.devfile.io/mount-to-devworkspace: "true"
+        #   controller.devfile.io/watch-configmap: "true"
+        # The ConfigMap is created by 08-provision-complete-workshop.sh
+        # and mounted at /home/user/sno-info
       
       # Endpoints (for any local services if needed)
       endpoints:
@@ -79,12 +81,6 @@ components:
   - name: workshop-data
     volume:
       size: 2Gi
-  
-  # SNO info volume (from ConfigMap created by workshop setup)
-  # This will be empty if the ConfigMap doesn't exist yet
-  - name: sno-info
-    volume:
-      size: 1Mi
 
 # Commands available in the workspace
 commands:
