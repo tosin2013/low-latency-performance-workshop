@@ -7,14 +7,14 @@ A hands-on workshop for understanding and optimizing low-latency workloads on Op
 - ArgoCD/GitOps
 - Performance tuning and real-time kernel configurations
 
-## 🚀 Quick Start for Administrators
+## Quick Start for Administrators
 
 ### Deployment Options
 
-| Scenario | Users | Time | Purpose |
-|----------|-------|------|---------|
-| [Single User](#single-user-deployment-testing) | 1 | ~45 min | End-to-end testing |
-| [Multi-User](#multi-user-deployment-workshop) | 5-20 | ~2 hrs | Full workshop |
+| Scenario | Command | Time | Purpose |
+|----------|---------|------|---------|
+| [Single User](#single-user-deployment-testing) | `make provision-single` | ~45 min | End-to-end testing |
+| [Multi-User](#multi-user-deployment-workshop) | `make provision USERS=5` | ~2 hrs | Full workshop |
 
 ---
 
@@ -28,35 +28,39 @@ A hands-on workshop for understanding and optimizing low-latency workloads on Op
 # SSH to RHPDS bastion
 ssh lab-user@bastion.{your-guid}.dynamic.opentlc.com
 
-# Navigate to workshop
-cd /home/lab-user/low-latency-performance-workshop/workshop-scripts
+# Navigate to workshop root
+cd /home/lab-user/low-latency-performance-workshop
 
-# 1. Setup ansible-navigator (one-time)
-./01-setup-ansible-navigator.sh
+# Check available commands
+make help
+```
 
-# 2. Configure AWS credentials
-./02-configure-aws-credentials.sh --help  # Shows required info
-./02-configure-aws-credentials.sh
+### One-Time Setup
+
+```bash
+# Run prerequisites setup (ansible-navigator, verify AgnosticD)
+./workshop-scripts/setup-prerequisites.sh
+
+# Configure AWS credentials (interactive prompts)
+./workshop-scripts/helpers/02-configure-aws-credentials.sh
 ```
 
 ### Deploy for user1
 
 ```bash
-# 3. Login to hub cluster (get URL from RHPDS email)
+# Login to hub cluster (get URL from RHPDS email)
 oc login https://api.cluster-xxx.dynamic.redhatworkshops.io:6443
 
-# 4. Install RHACM operator (if not present)
-./00-install-rhacm.sh
-
-# 5. Setup hub cluster for 1 user
-./05-setup-hub-users.sh 1 user
-
-# 6. Deploy SNO cluster for user1
-./03-test-single-sno.sh user1 rhpds
-
-# 7. Update Dev Spaces with SNO credentials
-./07-setup-user-devspaces.sh 1 user
+# Deploy single user (user1) - this is all you need!
+make provision-single
 ```
+
+That's it! The `make provision-single` command will:
+1. Setup hub cluster users and namespaces
+2. Deploy SNO cluster for user1 on AWS
+3. Configure Dev Spaces secrets
+4. Deploy personalized documentation
+5. Install operators (OpenShift Virtualization, SR-IOV)
 
 ### Verify Single User Deployment
 
@@ -64,11 +68,8 @@ oc login https://api.cluster-xxx.dynamic.redhatworkshops.io:6443
 # Check managed cluster
 oc get managedclusters workshop-user1
 
-# Check docs deployment (BuildConfig/ImageStream)
-oc get build,imagestream,deployment -n workshop-user1
-
-# Check docs URL
-oc get route -n workshop-user1
+# Check docs deployment
+oc get build,deployment,route -n workshop-user1
 
 # Check Dev Spaces secrets
 oc get secret -n workshop-user1 -l controller.devfile.io/mount-to-devworkspace=true
@@ -76,7 +77,7 @@ oc get secret -n workshop-user1 -l controller.devfile.io/mount-to-devworkspace=t
 
 ### Test User Experience
 
-1. **Login to OpenShift console**: `user1` / `workshop`
+1. **Login to OpenShift console**: `user1` / `<workshop-password>`
 2. **Open Dev Spaces**: Click "Red Hat OpenShift Dev Spaces" in application launcher
 3. **Create workspace**: Use URL `https://github.com/tosin2013/low-latency-performance-workshop`
 4. **Verify SNO access**: Run `oc get nodes` in Dev Spaces terminal
@@ -86,35 +87,20 @@ oc get secret -n workshop-user1 -l controller.devfile.io/mount-to-devworkspace=t
 
 ## Multi-User Deployment (Workshop)
 
-> ⚠️ **Status: Currently Testing** - Multi-user parallel deployment is functional but undergoing validation.
-
-### One-Command Deployment
+### Quick Deploy
 
 ```bash
 # Deploy for 5 users (default)
-./08-provision-complete-workshop.sh 5
+make provision USERS=5
 
-# Or with custom prefix
-./08-provision-complete-workshop.sh 10 user
-```
+# Deploy for 10 users
+make provision USERS=10
 
-### Step-by-Step Deployment
+# Deploy users 6-10 only (incremental)
+make provision USERS=10 START_USER=6
 
-```bash
-# 1. Install RHACM
-./00-install-rhacm.sh
-
-# 2. Setup hub (users + Dev Spaces)
-./05-setup-hub-users.sh 5 user
-
-# 3. Deploy SNO clusters (parallel)
-./06-provision-user-snos.sh 5 3 user  # 5 users, 3 parallel
-
-# 4. Update Dev Spaces secrets
-./07-setup-user-devspaces.sh 5 user
-
-# 5. Setup Module-02 RHACM-ArgoCD (optional pre-setup)
-./09-setup-module02-rhacm.sh
+# Use custom prefix (student1, student2, etc.)
+make provision USERS=5 USER_PREFIX=student
 ```
 
 ### Monitor Progress
@@ -123,18 +109,59 @@ oc get secret -n workshop-user1 -l controller.devfile.io/mount-to-devworkspace=t
 # Watch managed clusters
 watch -n 30 'oc get managedclusters'
 
-# Watch builds (docs)
-oc get builds -A -l workshop=low-latency
-
 # Check deployment logs
-tail -f /tmp/sno-provision-*/provision-*.log
+ls /tmp/workshop-provision-*/
+tail -f /tmp/workshop-provision-*/user1-deployment.log
 ```
+
+---
+
+## Expected Output (RHPDS Deployment)
+
+After successful deployment, each user will have:
+
+### Per-User Resources
+
+| Resource | Description |
+|----------|-------------|
+| SNO Cluster | Single Node OpenShift on AWS (workshop-userX) |
+| Hub Namespace | `workshop-userX` namespace on hub cluster |
+| Dev Spaces Namespace | `userX-devspaces` for IDE workspace |
+| ManagedCluster | RHACM-managed cluster entry |
+| Workshop User | `userX` with cluster-admin on their SNO |
+| Personalized Docs | `https://docs-userX.apps.<hub-domain>` |
+
+### Output Files (per user)
+
+```
+~/agnosticd-output/workshop-userX/
+├── kubeconfig                              # SNO cluster access
+├── ssh_provision_workshop-userX            # SSH private key
+├── ssh_provision_workshop-userX.pub        # SSH public key
+├── low-latency-workshop-sno_..._kubeadmin-password
+├── deployment-summary.txt                  # Deployment details
+└── provision-user-info.yaml                # User connection info
+```
+
+### Installed Operators (on each SNO)
+
+- OpenShift Virtualization
+- SR-IOV Network Operator
+- Node Tuning Operator (built-in)
+
+### Estimated Deployment Time
+
+| Scenario | Time |
+|----------|------|
+| Single user | ~45-90 minutes |
+| 5 users (sequential) | ~5 hours |
+| 10 users (sequential) | ~10 hours |
 
 ---
 
 ## Instance Size Requirements
 
-### Current Configuration (Testing)
+### Current Configuration
 
 | Component | Instance | vCPU | RAM | Notes |
 |-----------|----------|------|-----|-------|
@@ -143,23 +170,15 @@ tail -f /tmp/sno-provision-*/provision-*.log
 
 ### OpenShift Virtualization Requirements
 
-> ⚠️ **Research Needed**: The current `m5.4xlarge` instance may not be optimal for OpenShift Virtualization workloads.
+> **Note**: For full OpenShift Virtualization workloads, consider larger instances.
 
-**OpenShift Virtualization (CNV) requires:**
-- Bare metal or instances with nested virtualization support
-- Minimum 64GB RAM (128GB+ recommended for VMs)
-- NVMe/SSD storage for VM disks
-- Hardware virtualization (Intel VT-x/AMD-V)
+**Recommended for VM workloads:**
 
-**Recommended instance types for OpenShift Virt:**
-
-| Instance | vCPU | RAM | Network | Nested Virt | Notes |
-|----------|------|-----|---------|-------------|-------|
-| `m5.metal` | 96 | 384 GB | 25 Gbps | ✅ Full | Best for VMs |
-| `m5n.metal` | 96 | 384 GB | 100 Gbps | ✅ Full | Network-optimized |
-| `m5zn.metal` | 48 | 192 GB | 100 Gbps | ✅ Full | High single-thread |
-| `c5.metal` | 96 | 192 GB | 25 Gbps | ✅ Full | Compute-optimized |
-| `m5.8xlarge` | 32 | 128 GB | 10 Gbps | ⚠️ Nested | Lower cost option |
+| Instance | vCPU | RAM | Nested Virt | Notes |
+|----------|------|-----|-------------|-------|
+| `m5.metal` | 96 | 384 GB | Full | Best for VMs |
+| `m5.8xlarge` | 32 | 128 GB | Nested | Lower cost option |
+| `m5.4xlarge` | 16 | 64 GB | Nested | Testing only |
 
 **To change instance type**, edit:
 ```yaml
@@ -175,20 +194,6 @@ sno_instance_type: m5.metal  # or m5.8xlarge for testing
 | m5.8xlarge | ~$1.54 | ~$37 | ~$185 |
 | m5.metal | ~$4.61 | ~$110 | ~$550 |
 
-> 💡 **Tip**: For testing, use `m5.4xlarge`. For full workshop with VMs, consider `m5.metal` or `m5.8xlarge` with nested virt.
-
----
-
-## Workshop Content
-
-| Module | Topic | Duration |
-|--------|-------|----------|
-| 01 | SNO Overview & Architecture | 30 min |
-| 02 | RHACM GitOps Integration | 45 min |
-| 03 | Baseline Performance Testing | 60 min |
-| 04 | OpenShift Virtualization | 45 min |
-| 05 | Performance Tuning | 60 min |
-
 ---
 
 ## User Access Information
@@ -203,7 +208,7 @@ After deployment, share with users:
   OpenShift Console: https://console-openshift-console.apps.{hub-domain}
   
   Username: userN  (user1, user2, ...)
-  Password: workshop
+  Password: <provided by administrator>
   
   Dev Spaces: https://devspaces.apps.{hub-domain}
   (Use "Create Workspace" with this repo URL)
@@ -251,30 +256,30 @@ After deployment, share with users:
 
 ```
 low-latency-performance-workshop/
+├── Makefile                     # Main entry point for deployment
+├── README.adoc                  # Project overview
+├── devfile.yaml                 # Dev Spaces workspace definition
 ├── agnosticd-configs/           # AgnosticD configurations
 │   ├── low-latency-workshop-hub/    # Hub cluster setup
 │   └── low-latency-workshop-sno/    # SNO cluster deployment
 ├── content/                     # Antora workshop content
 │   └── modules/ROOT/pages/          # Module documentation
-├── devfile.yaml                 # Dev Spaces workspace definition
 ├── gitops/                      # GitOps resources
 │   ├── devspaces/                   # Dev Spaces operator + instance
-│   ├── rhacm-operator/              # RHACM operator
-│   ├── rhacm-instance/              # MultiClusterHub instance
-│   └── workshop-docs/               # BuildConfig for docs
-├── workshop-scripts/            # Deployment automation
-│   ├── 00-install-rhacm.sh
-│   ├── 01-setup-ansible-navigator.sh
-│   ├── 02-configure-aws-credentials.sh
-│   ├── 03-test-single-sno.sh
-│   ├── 05-setup-hub-users.sh
-│   ├── 06-provision-user-snos.sh
-│   ├── 07-setup-user-devspaces.sh
-│   ├── 08-provision-complete-workshop.sh
-│   └── 09-setup-module02-rhacm.sh
-└── docs/                        # Admin documentation
-    ├── ADMIN-DEPLOYMENT.md
-    └── USER_WORKSHOP_GUIDE.md
+│   ├── workshop-docs/               # BuildConfig for docs
+│   └── ...
+└── workshop-scripts/            # Deployment automation
+    ├── provision-workshop.sh        # Main provisioning script
+    ├── destroy-workshop.sh          # Cleanup script
+    ├── setup-prerequisites.sh       # One-time setup
+    ├── README.md                    # Detailed script documentation
+    └── helpers/                     # Helper scripts
+        ├── 00-install-rhacm.sh
+        ├── 01-setup-ansible-navigator.sh
+        ├── 02-configure-aws-credentials.sh
+        ├── 05-setup-hub-users.sh
+        ├── deploy-single-sno.sh
+        └── ...
 ```
 
 ---
@@ -282,24 +287,71 @@ low-latency-performance-workshop/
 ## Cleanup
 
 ### Single User
-```bash
-# Destroy SNO cluster
-./99-destroy-sno.sh workshop-user1
 
-# Remove hub resources
-oc delete namespace workshop-user1
+```bash
+# Destroy user1 resources
+make destroy USERS=1
 ```
 
 ### Multi-User
-```bash
-# Destroy all SNO clusters
-./99-destroy-all-students.sh 5 user
 
-# Remove hub resources
-for i in $(seq 1 5); do
-    oc delete namespace workshop-user${i}
-done
+```bash
+# Destroy all users (default 5)
+make destroy
+
+# Destroy 10 users
+make destroy USERS=10
 ```
+
+### Advanced Cleanup (Stuck VPCs)
+
+```bash
+# List all VPCs
+make list-vpcs
+
+# Force delete a specific VPC and all its resources
+make cleanup-vpc VPC_ID=vpc-xxxxxxxxx
+```
+
+---
+
+## Troubleshooting
+
+### Check SNO Status
+
+```bash
+# Via RHACM
+oc get managedcluster workshop-user1
+
+# Direct access (if kubeconfig available)
+oc --kubeconfig=~/agnosticd-output/workshop-user1/kubeconfig get nodes
+```
+
+### View Deployment Logs
+
+```bash
+# Find log directory
+ls -la /tmp/workshop-provision-*/
+
+# View specific user log
+cat /tmp/workshop-provision-*/user1-deployment.log
+```
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| SNO not joining RHACM | Check AWS security groups, verify auto-import secret |
+| Build failing | Check BuildConfig logs: `oc logs bc/workshop-docs -n workshop-userX` |
+| Dev Spaces not mounting secrets | Verify labels: `controller.devfile.io/mount-to-devworkspace=true` |
+
+---
+
+## Additional Documentation
+
+- **Detailed script docs**: [workshop-scripts/README.md](workshop-scripts/README.md)
+- **Project overview**: [README.adoc](README.adoc)
+- **AgnosticD reference**: [RedHatGov/agnosticd](https://github.com/redhat-cop/agnosticd)
 
 ---
 
@@ -307,7 +359,7 @@ done
 
 1. Fork the repository
 2. Create a feature branch
-3. Run validation: `./utilities/lab-build/validate-build.sh`
+3. Test changes with actual workshop environment
 4. Submit PR with signed commits (`git commit -s`)
 
 ---
@@ -315,6 +367,4 @@ done
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/tosin2013/low-latency-performance-workshop/issues)
-- **Docs**: See `docs/` directory
-- **AgnosticD**: [RedHatGov/agnosticd](https://github.com/redhat-cop/agnosticd)
-
+- **Docs**: See `workshop-scripts/README.md` for detailed deployment docs
