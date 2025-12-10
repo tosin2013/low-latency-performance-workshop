@@ -70,6 +70,10 @@ workshop_repo_branch: "main"
 # ============================================================
 # Environment Tags
 # ============================================================
-project_tag: "low-latency-workshop"
+# NOTE: project_tag is now set dynamically in default_vars.yml as:
+#   project_tag: "{{ env_type }}-{{ guid }}"
+# This ensures unique CloudFormation stack names for parallel deployments.
+# Example: low-latency-workshop-sno-workshop-user1
+# DO NOT hardcode project_tag here - it will break parallel deployments!
 environment_tag: "rhpds"
 

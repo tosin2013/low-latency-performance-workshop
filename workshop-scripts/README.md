@@ -1,213 +1,321 @@
 # Workshop Scripts
 
-Automation scripts for deploying the Low-Latency Performance Workshop using AgnosticD with ansible-navigator.
+Scripts for deploying and managing the Low-Latency Performance Workshop.
 
-## Script Overview
-
-### Initial Setup (Run Once)
-
-| Script | Purpose | When to Run |
-|--------|---------|-------------|
-| `01-setup-ansible-navigator.sh` | Install and configure ansible-navigator | Once per bastion |
-| `02-configure-aws-credentials.sh` | Setup AWS credentials and pull secret | Once per bastion |
-
-### SNO Deployment
-
-| Script | Purpose | When to Run |
-|--------|---------|-------------|
-| `03-test-single-sno.sh` | Test deploy single student SNO | Before full deployment |
-| `04-provision-student-clusters.sh` | Deploy all student SNOs (batch mode) | Large-scale deployment |
-
-### Multi-User Workshop Setup (NEW)
-
-| Script | Purpose | When to Run |
-|--------|---------|-------------|
-| `05-setup-hub-users.sh` | Create htpasswd users and install Dev Spaces | After hub cluster ready |
-| `06-provision-user-snos.sh` | Deploy SNO clusters in parallel | After users created |
-| `07-setup-user-devspaces.sh` | Update Dev Spaces secrets with SNO credentials | After SNO deployment |
-| `08-provision-complete-workshop.sh` | **Master script** - runs all setup steps | Complete workshop setup |
-| `09-setup-module02-rhacm.sh` | Automate Module-02 RHACM-ArgoCD setup | Before users start module |
-
-### Cleanup
-
-| Script | Purpose | When to Run |
-|--------|---------|-------------|
-| `99-destroy-all-students.sh` | Destroy all student clusters | Post-workshop |
-| `99-destroy-sno.sh` | Destroy single SNO cluster | As needed |
-
-## Quick Start - Multi-User Workshop
-
-### Complete Workshop Setup (Recommended)
+## Quick Start (Using Makefile)
 
 ```bash
-cd /home/lab-user/low-latency-performance-workshop/workshop-scripts
+# From the project root directory:
+cd /home/lab-user/low-latency-performance-workshop
 
-# 1. Initial setup (if not done)
-./01-setup-ansible-navigator.sh
-./02-configure-aws-credentials.sh
+# Deploy workshop for 5 users (user1-user5)
+make provision USERS=5
 
-# 2. Login to hub cluster
-oc login https://api.cluster-xxx.dynamic.redhatworkshops.io:6443
+# Deploy single user for testing
+make provision-single
 
-# 3. Run complete workshop setup for 5 users
-./08-provision-complete-workshop.sh 5
-
-# This will:
-#   - Create htpasswd users (student1-student5)
-#   - Install OpenShift Dev Spaces
-#   - Deploy 5 SNO clusters (parallel)
-#   - Configure Dev Spaces with SNO credentials
-#   - Setup RHACM-ArgoCD integration
+# Destroy all resources
+make destroy
 ```
 
-### Step-by-Step Setup
+## Provisioning Process Overview
+
+The workshop deployment has **7 sequential steps per user**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DEPLOYMENT FLOW (per user)                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Step 1: Deploy SNO Cluster                                      │
+│    └─→ Creates CloudFormation stack in AWS                       │
+│    └─→ Provisions bastion + SNO node                             │
+│    └─→ Output: ~/agnosticd-output/workshop-userX/                │
+│                                                                  │
+│  Step 2: Wait for SNO Ready (90 min timeout)                     │
+│    └─→ Monitors RHACM ManagedCluster status                      │
+│    └─→ Waits for JOINED=True, AVAILABLE=True                     │
+│                                                                  │
+│  Step 3: RHACM Import                                            │
+│    └─→ Creates ManagedCluster resource                           │
+│    └─→ Applies auto-import secret                                │
+│                                                                  │
+│  Step 4: Deploy Operators to SNO                                 │
+│    └─→ OpenShift Virtualization                                  │
+│    └─→ SR-IOV Network Operator                                   │
+│    └─→ Node Tuning Operator (built-in)                          │
+│                                                                  │
+│  Step 5: Setup Dev Spaces Secrets    ◄── NEW STEP                │
+│    └─→ Creates kubeconfig secret for auto-mount                  │
+│    └─→ Creates SSH key secret for auto-mount                     │
+│    └─→ Creates SNO info ConfigMap                                │
+│                                                                  │
+│  Step 6: Deploy Workshop Documentation                           │
+│    └─→ BuildConfig, Deployment, Service, Route                   │
+│    └─→ URL: https://docs-userX.<cluster-domain>                  │
+│                                                                  │
+│  Step 7: Verify Deployment                                       │
+│    └─→ Checks kubeconfig exists                                  │
+│    └─→ Verifies ManagedCluster status                           │
+│                                                                  │
+│  ═══════════════════════════════════════════════════════════════ │
+│  ✓ userX complete! Move to next user...                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Point**: Deployments are **sequential** - each user's entire setup completes before the next user starts. This avoids CloudFormation conflicts.
+
+## Main Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `provision-workshop.sh` | **MAIN** - Deploy complete workshop for N users (sequential) |
+| `destroy-workshop.sh` | Clean up all workshop resources |
+| `cleanup-vpc.sh` | Advanced: Delete all resources in a specific VPC |
+| `setup-prerequisites.sh` | One-time setup: Ansible Navigator, AWS credentials |
+
+## Makefile Targets
 
 ```bash
-# 1. Setup hub cluster (users + Dev Spaces)
-./05-setup-hub-users.sh 5
+# From project root:
 
-# 2. Deploy SNO clusters (parallel)
-./06-provision-user-snos.sh 5 3  # 5 users, 3 parallel
+# === Provisioning ===
+make provision                      # Deploy user1-user5 (default)
+make provision USERS=10             # Deploy user1-user10
+make provision USERS=10 START_USER=6  # Deploy user6-user10 only
+make provision-single               # Deploy user1 only (for testing)
+make provision USER_PREFIX=student  # Use 'student' prefix
 
-# 3. Update Dev Spaces secrets
-./07-setup-user-devspaces.sh 5
+# === Destruction ===
+make destroy                        # Destroy all resources (interactive)
+make destroy USERS=10               # Destroy 10 users
 
-# 4. Setup Module-02 RHACM
-./09-setup-module02-rhacm.sh
+# === Advanced Cleanup ===
+make list-vpcs                      # List all VPCs in AWS
+make cleanup-vpc VPC_ID=vpc-xxx     # Delete specific VPC and all resources
+make cleanup-vpc-force VPC_ID=vpc-xxx  # Force delete (no confirmation)
 ```
 
-### Single User Testing
+## Helper Scripts (can be run individually)
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `helpers/deploy-single-sno.sh` | Deploy single SNO cluster | `./helpers/deploy-single-sno.sh user1 rhpds` |
+| `helpers/07-setup-user-devspaces.sh` | Setup Dev Spaces secrets | `./helpers/07-setup-user-devspaces.sh 1 user 1` |
+| `helpers/deploy-workshop-docs.sh` | Deploy documentation | `./helpers/deploy-workshop-docs.sh 1 user` |
+| `helpers/check-sno-status.sh` | Check SNO health | `./helpers/check-sno-status.sh user1` |
+| `helpers/05-setup-hub-users.sh` | Create hub users | `./helpers/05-setup-hub-users.sh 5` |
+
+### 07-setup-user-devspaces.sh
+
+Creates secrets for Dev Spaces auto-mounting:
 
 ```bash
-# Test with single user first
-./03-test-single-sno.sh student1 rhpds
+# Single user
+./helpers/07-setup-user-devspaces.sh 1 user 1    # Just user1
 
-# Verify
-oc get managedcluster workshop-student1
+# Multiple users
+./helpers/07-setup-user-devspaces.sh 5 user 1    # user1-user5
+./helpers/07-setup-user-devspaces.sh 10 user 6   # user6-user10
 ```
 
-## User Experience
+**What it creates:**
+- `userX-kubeconfig` secret → mounted at `/home/user/.kube/config`
+- `userX-ssh-key` secret → mounted at `/home/user/.ssh/id_rsa`
+- `userX-sno-info` ConfigMap → SNO connection info
 
-After setup, each user gets:
+### deploy-workshop-docs.sh
 
-1. **Login credentials**: `studentN` / `workshop`
-2. **Dev Spaces workspace** with:
-   - Kubeconfig auto-mounted at `/home/user/.kube/config`
-   - SSH key auto-mounted at `/home/user/.ssh/id_rsa`
-   - Workshop repository cloned
-3. **SNO cluster**: `workshop-studentN`
-4. **Personalized documentation** (optional)
+Deploys personalized documentation for users:
 
-### User Workflow
+```bash
+./helpers/deploy-workshop-docs.sh 1 user    # Docs for user1
+./helpers/deploy-workshop-docs.sh 5 user    # Docs for user1-user5
+```
 
-1. Login to OpenShift console
-2. Open Dev Spaces dashboard
-3. Start "low-latency-workshop" workspace
-4. Run `oc get nodes` to verify SNO access
-5. Follow workshop modules
+**What it creates:**
+- BuildConfig (builds docs from source)
+- Deployment
+- Service
+- Route (https://docs-userX.<cluster-domain>)
 
 ## Prerequisites
 
-- RHPDS "ACM for Kubernetes Demo" or similar hub cluster
-- SSH access to hub bastion
-- AWS credentials (access key + secret)
-- OpenShift pull secret from console.redhat.com
-- AgnosticD repository cloned (`~/agnosticd`)
+Before running provisioning:
 
-## Configuration
+1. **Logged into Hub Cluster**
+   ```bash
+   oc login <hub-api-url> -u admin
+   oc whoami  # Verify
+   ```
 
-### Environment Variables
+2. **RHACM Installed** on hub cluster
+   ```bash
+   oc get csv -n open-cluster-management | grep advanced-cluster-management
+   ```
 
-| Variable | Description |
-|----------|-------------|
-| `HUB_API_URL` | Hub cluster API endpoint |
-| `HUB_KUBECONFIG` | Path to hub kubeconfig |
-| `SUBDOMAIN_BASE_SUFFIX` | Cluster subdomain suffix |
+3. **AWS Credentials** configured
+   ```bash
+   cat ~/secrets-ec2.yml  # Should have aws_access_key_id, aws_secret_access_key
+   ```
 
-### Files Created
+4. **AgnosticD** cloned
+   ```bash
+   ls ~/agnosticd  # Should exist
+   ```
 
-| File | Purpose |
-|------|---------|
-| `~/.ansible-navigator.yaml` | ansible-navigator config |
-| `~/.aws/credentials` | AWS credentials |
-| `~/pull-secret.json` | OpenShift pull secret |
-| `~/secrets-ec2.yml` | AgnosticD secrets |
-| `~/agnosticd-output/` | SNO kubeconfigs and SSH keys |
+5. **Pull Secret** available
+   ```bash
+   cat ~/pull-secret.json  # OpenShift pull secret
+   ```
 
-## AgnosticD Configurations
+## Output Files
 
-### Hub Cluster Setup
+After provisioning, you'll find:
 
-The `agnosticd-configs/low-latency-workshop-hub/` config provides:
+| Location | Contents |
+|----------|----------|
+| `~/agnosticd-output/workshop-userX/` | Kubeconfig, SSH keys, passwords |
+| `workshop-credentials.txt` | All user credentials summary |
+| `/tmp/workshop-provision-*/` | Deployment logs |
 
-- HTPasswd authentication workload
-- Dev Spaces installation workload
-- Per-user namespace creation
-- Dev Spaces secret mounting
+### Per-user output files:
+```
+~/agnosticd-output/workshop-user1/
+├── kubeconfig                    # SNO kubeconfig
+├── ssh_provision_workshop-user1  # SSH private key
+├── ssh_provision_workshop-user1.pub
+├── low-latency-workshop-sno_workshop-user1_kubeadmin-password
+├── deployment-summary.txt
+└── ...
+```
 
-### SNO Deployment
+## Namespaces Created
 
-The `agnosticd-configs/low-latency-workshop-sno/` config provides:
+For each user, these namespaces are created on the **hub cluster**:
 
-- Single Node OpenShift deployment
-- RHACM auto-import
-- Bastion host setup
+| Namespace | Purpose |
+|-----------|---------|
+| `workshop-userX` | User's main workshop namespace |
+| `userX-devspaces` | Dev Spaces workspace namespace |
 
 ## Troubleshooting
 
-### Dev Spaces secrets not mounting
-
+### Check SNO Status
 ```bash
-# Check secrets have correct labels
-oc get secrets -n workshop-student1 -l controller.devfile.io/mount-to-devworkspace=true
+# Via RHACM
+oc get managedcluster workshop-user1
 
-# Check secret annotations
-oc get secret student1-kubeconfig -n workshop-student1 -o yaml
+# Direct access
+oc --kubeconfig=~/agnosticd-output/workshop-user1/kubeconfig get nodes
 ```
 
-### SNO not accessible from Dev Spaces
-
+### Test Bastion SSH
 ```bash
-# Verify kubeconfig secret content
-oc get secret student1-kubeconfig -n workshop-student1 -o jsonpath='{.data.config}' | base64 -d
-
-# Re-run secret update
-./07-setup-user-devspaces.sh 5
+ssh -i ~/agnosticd-output/workshop-user1/ssh_provision_workshop-user1 \
+    ec2-user@<bastion-ip>
 ```
 
-### RHACM import failed
-
+### View Deployment Logs
 ```bash
-# Check managed cluster status
-oc get managedcluster workshop-student1 -o yaml
+# Find latest log directory
+ls -la /tmp/workshop-provision-*
 
-# Manual import script is generated
-cat /tmp/manual-import-workshop-student1.sh
+# View user-specific log
+cat /tmp/workshop-provision-*/user1-deployment.log
 ```
 
-### ArgoCD apps not syncing
-
+### Check Dev Spaces Secrets
 ```bash
-# Check application status
-oc get applications.argoproj.io -n openshift-gitops
+# List secrets with auto-mount label
+oc get secrets -n workshop-user1 -l controller.devfile.io/mount-to-devworkspace=true
 
-# Check app details
-oc describe application openshift-virtualization-operator -n openshift-gitops
+# Check ConfigMap
+oc get configmap user1-sno-info -n workshop-user1 -o yaml
 ```
 
-## Logs
+### Re-run Individual Steps
+```bash
+# Re-deploy SNO (if failed)
+./helpers/deploy-single-sno.sh user1 rhpds
 
-| Log Location | Content |
-|--------------|---------|
-| `/tmp/workshop-provision-*/` | Complete workshop provisioning logs |
-| `/tmp/sno-provision-*/` | SNO deployment logs |
-| `/tmp/test-studentN.log` | Single SNO test logs |
-| `~/ansible-artifacts/` | ansible-navigator artifacts |
+# Re-setup Dev Spaces secrets
+./helpers/07-setup-user-devspaces.sh 1 user 1
 
-## Support
+# Re-deploy docs
+./helpers/deploy-workshop-docs.sh 1 user
+```
 
-For detailed documentation:
+### Force Cleanup a VPC
+```bash
+# Find VPC ID
+make list-vpcs
 
-- Deployment guide: `docs/deployment/README.md`
-- User quick start: `docs/USER_QUICK_START.md`
-- AgnosticD hub config: `agnosticd-configs/low-latency-workshop-hub/README.adoc`
+# Delete everything in that VPC
+make cleanup-vpc VPC_ID=vpc-0123456789abcdef
+```
+
+## Estimated Times
+
+| Operation | Time |
+|-----------|------|
+| Single SNO deployment | ~30-45 minutes |
+| Wait for SNO ready | Up to 90 minutes (usually faster) |
+| Operators installation | ~10 minutes |
+| Dev Spaces secrets | ~1 minute |
+| Documentation deployment | ~2 minutes |
+| **Total per user** | **~45-90 minutes** |
+
+For multiple users (sequential): `N users × ~60 minutes`
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        HUB CLUSTER                               │
+│  (your-hub-cluster.<subdomain>)                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │ RHACM        │  │ Dev Spaces   │  │ htpasswd     │           │
+│  │ (manages     │  │ (IDE for     │  │ (user1,      │           │
+│  │  SNO clusters)│  │  users)      │  │  user2...)   │           │
+│  └──────────────┘  └──────────────┘  └──────────────┘           │
+│         │                 │                                      │
+│         │    ┌────────────┴────────────┐                        │
+│         │    │     Namespaces          │                        │
+│         │    │  ┌─────────────────┐    │                        │
+│         │    │  │ workshop-user1  │    │                        │
+│         │    │  │ - kubeconfig    │    │                        │
+│         │    │  │ - ssh-key       │    │                        │
+│         │    │  │ - sno-info      │    │                        │
+│         │    │  │ - docs route    │    │                        │
+│         │    │  └─────────────────┘    │                        │
+│         │    └─────────────────────────┘                        │
+│         │                                                        │
+│         ▼                                                        │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              ManagedClusters                              │   │
+│  │  workshop-user1, workshop-user2, ...                      │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         │ (manages via RHACM)
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     AWS (us-east-2)                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │ workshop-user1  │  │ workshop-user2  │  │ workshop-userN  │  │
+│  │ (SNO Cluster)   │  │ (SNO Cluster)   │  │ (SNO Cluster)   │  │
+│  │                 │  │                 │  │                 │  │
+│  │ • Bastion       │  │ • Bastion       │  │ • Bastion       │  │
+│  │ • SNO Node      │  │ • SNO Node      │  │ • SNO Node      │  │
+│  │ • Operators:    │  │ • Operators:    │  │ • Operators:    │  │
+│  │   - Virt        │  │   - Virt        │  │   - Virt        │  │
+│  │   - SR-IOV      │  │   - SR-IOV      │  │   - SR-IOV      │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```

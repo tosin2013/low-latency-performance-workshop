@@ -1,13 +1,13 @@
 #!/bin/bash
-# Destroy SNO clusters for multiple workshop students
+# Destroy SNO clusters for multiple workshop users
 #
 # Usage:
-#   ./99-destroy-all-students.sh [start_num] [end_num] [mode]
+#   ./99-destroy-all-users.sh [start_num] [end_num] [mode]
 #
 # Examples:
-#   ./99-destroy-all-students.sh 1 30 rhpds       # Destroy students 1-30 with RHACM cleanup
-#   ./99-destroy-all-students.sh 1 10 standalone  # Destroy students 1-10 without RHACM cleanup
-#   ./99-destroy-all-students.sh 15 15 rhpds      # Destroy only student15
+#   ./99-destroy-all-users.sh 1 30 rhpds       # Destroy users 1-30 with RHACM cleanup
+#   ./99-destroy-all-users.sh 1 10 standalone  # Destroy users 1-10 without RHACM cleanup
+#   ./99-destroy-all-users.sh 15 15 rhpds      # Destroy only user15
 
 set -e
 
@@ -35,7 +35,7 @@ if [[ "${DEPLOYMENT_MODE}" != "rhpds" && "${DEPLOYMENT_MODE}" != "standalone" ]]
 fi
 
 # Confirm destruction
-echo "⚠️  WARNING: This will destroy all resources for students ${START_NUM}-${END_NUM}"
+echo "⚠️  WARNING: This will destroy all resources for users ${START_NUM}-${END_NUM}"
 echo ""
 echo "This includes:"
 echo "  - AWS VPCs, EC2 instances, EBS volumes"
@@ -78,22 +78,22 @@ echo ""
 declare -a SUCCESSFUL_CLEANUPS
 declare -a FAILED_CLEANUPS
 
-# Cleanup each student sequentially (safer than parallel)
+# Cleanup each user sequentially (safer than parallel)
 for i in $(seq ${START_NUM} ${END_NUM}); do
-    STUDENT_NAME="student${i}"
-    LOG_FILE="${LOG_DIR}/cleanup-${STUDENT_NAME}.log"
+    USER_NAME="user${i}"
+    LOG_FILE="${LOG_DIR}/cleanup-${USER_NAME}.log"
     
     echo "────────────────────────────────────────────────────────────"
-    echo "Cleaning up ${STUDENT_NAME} ($((i - START_NUM + 1))/${NUM_STUDENTS})"
+    echo "Cleaning up ${USER_NAME} ($((i - START_NUM + 1))/${NUM_STUDENTS})"
     echo "────────────────────────────────────────────────────────────"
     
     # Run cleanup script
-    if ${WORKSHOP_DIR}/workshop-scripts/99-destroy-sno-complete.sh ${STUDENT_NAME} ${DEPLOYMENT_MODE} > ${LOG_FILE} 2>&1; then
-        echo "✓ ${STUDENT_NAME}: Cleanup successful"
-        SUCCESSFUL_CLEANUPS+=("${STUDENT_NAME}")
+    if ${WORKSHOP_DIR}/workshop-scripts/99-destroy-sno-complete.sh ${USER_NAME} ${DEPLOYMENT_MODE} > ${LOG_FILE} 2>&1; then
+        echo "✓ ${USER_NAME}: Cleanup successful"
+        SUCCESSFUL_CLEANUPS+=("${USER_NAME}")
     else
-        echo "✗ ${STUDENT_NAME}: Cleanup failed (check log)"
-        FAILED_CLEANUPS+=("${STUDENT_NAME}")
+        echo "✗ ${USER_NAME}: Cleanup failed (check log)"
+        FAILED_CLEANUPS+=("${USER_NAME}")
     fi
     
     echo ""
@@ -119,17 +119,17 @@ echo ""
 
 if [ ${#FAILED_CLEANUPS[@]} -gt 0 ]; then
     echo "Failed cleanups:"
-    for student in "${FAILED_CLEANUPS[@]}"; do
-        LOG_FILE="${LOG_DIR}/cleanup-${student}.log"
+    for user in "${FAILED_CLEANUPS[@]}"; do
+        LOG_FILE="${LOG_DIR}/cleanup-${user}.log"
         ERROR=$(grep -i "error\|failed" ${LOG_FILE} | tail -1 || echo "Check log for details")
-        echo "  ✗ ${student}"
+        echo "  ✗ ${user}"
         echo "    Log: ${LOG_FILE}"
         echo "    Error: ${ERROR}"
     done
     echo ""
     echo "Retry failed cleanups:"
-    for student in "${FAILED_CLEANUPS[@]}"; do
-        echo "  ./workshop-scripts/99-destroy-sno-complete.sh ${student} ${DEPLOYMENT_MODE}"
+    for user in "${FAILED_CLEANUPS[@]}"; do
+        echo "  ./workshop-scripts/99-destroy-sno-complete.sh ${user} ${DEPLOYMENT_MODE}"
     done
     echo ""
 fi
@@ -207,7 +207,7 @@ echo ""
 REMAINING_STACKS=$(aws cloudformation list-stacks \
   --region ${AWS_REGION} \
   --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE ROLLBACK_COMPLETE \
-  --query 'StackSummaries[?contains(StackName, `workshop-student`)].StackName' \
+  --query 'StackSummaries[?contains(StackName, `workshop-user`)].StackName' \
   --output text 2>/dev/null | wc -w || echo "0")
 
 if [ "${REMAINING_STACKS}" -gt 0 ]; then
@@ -215,7 +215,7 @@ if [ "${REMAINING_STACKS}" -gt 0 ]; then
     aws cloudformation list-stacks \
       --region ${AWS_REGION} \
       --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE ROLLBACK_COMPLETE \
-      --query 'StackSummaries[?contains(StackName, `workshop-student`)].StackName' \
+      --query 'StackSummaries[?contains(StackName, `workshop-user`)].StackName' \
       --output table
     echo ""
 else

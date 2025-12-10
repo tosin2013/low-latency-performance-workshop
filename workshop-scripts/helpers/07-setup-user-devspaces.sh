@@ -3,11 +3,14 @@
 # Updates kubeconfig and SSH key secrets for each user
 #
 # Usage:
-#   ./07-setup-user-devspaces.sh [num_users]
+#   ./07-setup-user-devspaces.sh [num_users] [user_prefix] [start_user]
 #
 # Examples:
-#   ./07-setup-user-devspaces.sh        # Update 5 users (default)
-#   ./07-setup-user-devspaces.sh 10     # Update 10 users
+#   ./07-setup-user-devspaces.sh              # Update user1-user5 (default)
+#   ./07-setup-user-devspaces.sh 10           # Update user1-user10
+#   ./07-setup-user-devspaces.sh 1 user       # Update just user1
+#   ./07-setup-user-devspaces.sh 5 student    # Update student1-student5
+#   ./07-setup-user-devspaces.sh 10 user 6    # Update user6-user10
 #
 # Prerequisites:
 #   - Run 05-setup-hub-users.sh (creates placeholder secrets)
@@ -18,6 +21,8 @@
 set -e
 
 NUM_USERS=${1:-5}
+USER_PREFIX=${2:-user}
+START_USER=${3:-1}
 OUTPUT_DIR="${HOME}/agnosticd-output"
 WORKSHOP_DIR="/home/lab-user/low-latency-performance-workshop"
 
@@ -26,7 +31,8 @@ echo "║     UPDATE DEV SPACES SECRETS WITH SNO CREDENTIALS         ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Configuration:"
-echo "  Users: student1 - student${NUM_USERS}"
+echo "  User prefix: ${USER_PREFIX}"
+echo "  Users: ${USER_PREFIX}${START_USER} - ${USER_PREFIX}${NUM_USERS}"
 echo "  SNO output dir: ${OUTPUT_DIR}"
 echo ""
 
@@ -42,13 +48,14 @@ if ! oc whoami &> /dev/null; then
 fi
 echo "✓ Logged into cluster: $(oc whoami --show-server)"
 
-# Check output directory
+# Check output directory (optional - we'll create ConfigMaps regardless)
 if [ ! -d "${OUTPUT_DIR}" ]; then
-    echo "✗ SNO output directory not found: ${OUTPUT_DIR}"
-    echo "Run ./06-provision-user-snos.sh first"
-    exit 1
+    echo "⚠ SNO output directory not found: ${OUTPUT_DIR}"
+    echo "  Will create placeholder ConfigMaps (SNO credentials will be added later)"
+    mkdir -p "${OUTPUT_DIR}"
+else
+    echo "✓ SNO output directory exists"
 fi
-echo "✓ SNO output directory exists"
 
 # Get subdomain suffix
 CLUSTER_API=$(oc whoami --show-server)
@@ -65,8 +72,8 @@ echo ""
 declare -a UPDATED
 declare -a SKIPPED
 
-for i in $(seq 1 ${NUM_USERS}); do
-    USER_NAME="student${i}"
+for i in $(seq ${START_USER} ${NUM_USERS}); do
+    USER_NAME="${USER_PREFIX}${i}"
     USER_NS="workshop-${USER_NAME}"
     GUID="workshop-${USER_NAME}"
     
@@ -85,18 +92,18 @@ for i in $(seq 1 ${NUM_USERS}); do
         KUBECONFIG_PATH="${OUTPUT_DIR}/${GUID}/kubeconfig"
     elif [ -f "${OUTPUT_DIR}/${GUID}/low-latency-workshop-sno_${GUID}_kubeconfig" ]; then
         KUBECONFIG_PATH="${OUTPUT_DIR}/${GUID}/low-latency-workshop-sno_${GUID}_kubeconfig"
-    elif [ -f "${OUTPUT_DIR}/test-${USER_NAME}/kubeconfig" ]; then
-        KUBECONFIG_PATH="${OUTPUT_DIR}/test-${USER_NAME}/kubeconfig"
-    elif [ -f "${OUTPUT_DIR}/test-${USER_NAME}/low-latency-workshop-sno_test-${USER_NAME}_kubeconfig" ]; then
-        KUBECONFIG_PATH="${OUTPUT_DIR}/test-${USER_NAME}/low-latency-workshop-sno_test-${USER_NAME}_kubeconfig"
+    elif [ -f "${OUTPUT_DIR}/workshop-${USER_NAME}/kubeconfig" ]; then
+        KUBECONFIG_PATH="${OUTPUT_DIR}/workshop-${USER_NAME}/kubeconfig"
+    elif [ -f "${OUTPUT_DIR}/workshop-${USER_NAME}/low-latency-workshop-sno_workshop-${USER_NAME}_kubeconfig" ]; then
+        KUBECONFIG_PATH="${OUTPUT_DIR}/workshop-${USER_NAME}/low-latency-workshop-sno_workshop-${USER_NAME}_kubeconfig"
     fi
     
     # Find SSH key (try multiple paths)
     SSH_KEY_PATH=""
     if [ -f "${OUTPUT_DIR}/${GUID}/ssh_provision_${GUID}" ]; then
         SSH_KEY_PATH="${OUTPUT_DIR}/${GUID}/ssh_provision_${GUID}"
-    elif [ -f "${OUTPUT_DIR}/test-${USER_NAME}/ssh_provision_test-${USER_NAME}" ]; then
-        SSH_KEY_PATH="${OUTPUT_DIR}/test-${USER_NAME}/ssh_provision_test-${USER_NAME}"
+    elif [ -f "${OUTPUT_DIR}/workshop-${USER_NAME}/ssh_provision_workshop-${USER_NAME}" ]; then
+        SSH_KEY_PATH="${OUTPUT_DIR}/workshop-${USER_NAME}/ssh_provision_workshop-${USER_NAME}"
     fi
     
     # Update kubeconfig secret
@@ -153,8 +160,8 @@ for i in $(seq 1 ${NUM_USERS}); do
     
     # Determine actual GUID used
     ACTUAL_GUID="${GUID}"
-    if [ -d "${OUTPUT_DIR}/test-${USER_NAME}" ]; then
-        ACTUAL_GUID="test-${USER_NAME}"
+    if [ -d "${OUTPUT_DIR}/workshop-${USER_NAME}" ]; then
+        ACTUAL_GUID="workshop-${USER_NAME}"
         SNO_API_URL="https://api.${ACTUAL_GUID}${SUBDOMAIN_SUFFIX}:6443"
         SNO_CONSOLE_URL="https://console-openshift-console.apps.${ACTUAL_GUID}${SUBDOMAIN_SUFFIX}"
     fi
@@ -193,10 +200,64 @@ EOF
     
     echo "    Updated ${USER_NAME}-sno-info ConfigMap"
     
-    if [ -n "${KUBECONFIG_PATH}" ] || [ -n "${SSH_KEY_PATH}" ]; then
+    # Also copy to devspaces namespace for auto-mounting
+    DEVSPACES_NS="${USER_NAME}-devspaces"
+    if oc get namespace ${DEVSPACES_NS} &>/dev/null; then
+        echo "  Copying to ${DEVSPACES_NS} for auto-mount..."
+        
+        # Copy kubeconfig secret to devspaces namespace
+        if [ -n "${KUBECONFIG_PATH}" ]; then
+            oc create secret generic ${USER_NAME}-kubeconfig \
+                --from-file=config=${KUBECONFIG_PATH} \
+                -n ${DEVSPACES_NS} \
+                --dry-run=client -o yaml | \
+            oc label -f - --local -o yaml \
+                workshop=low-latency \
+                controller.devfile.io/mount-to-devworkspace=true \
+                controller.devfile.io/watch-secret=true | \
+            oc annotate -f - --local -o yaml \
+                controller.devfile.io/mount-path=/home/user/.kube \
+                controller.devfile.io/mount-as=subpath | \
+            oc apply -f -
+        fi
+        
+        # Copy SSH key secret to devspaces namespace
+        if [ -n "${SSH_KEY_PATH}" ]; then
+            oc create secret generic ${USER_NAME}-ssh-key \
+                --from-file=id_rsa=${SSH_KEY_PATH} \
+                -n ${DEVSPACES_NS} \
+                --dry-run=client -o yaml | \
+            oc label -f - --local -o yaml \
+                workshop=low-latency \
+                controller.devfile.io/mount-to-devworkspace=true \
+                controller.devfile.io/watch-secret=true | \
+            oc annotate -f - --local -o yaml \
+                controller.devfile.io/mount-path=/home/user/.ssh \
+                controller.devfile.io/mount-as=subpath | \
+            oc apply -f -
+        fi
+        
+        # Copy SNO info ConfigMap to devspaces namespace (force to override conflicts)
+        oc get configmap ${USER_NAME}-sno-info -n ${USER_NS} -o yaml | \
+            sed "s/namespace: ${USER_NS}/namespace: ${DEVSPACES_NS}/" | \
+            sed '/resourceVersion:/d' | \
+            sed '/uid:/d' | \
+            sed '/creationTimestamp:/d' | \
+            oc apply --force -f -
+        
+        echo "    ✓ Copied to ${DEVSPACES_NS}"
+    fi
+    
+    # Track results
+    if [ -n "${KUBECONFIG_PATH}" ] && [ -n "${SSH_KEY_PATH}" ]; then
         UPDATED+=("${USER_NAME}")
+        echo "  ✓ ${USER_NAME} fully configured with SNO credentials"
+    elif [ -n "${KUBECONFIG_PATH}" ] || [ -n "${SSH_KEY_PATH}" ]; then
+        UPDATED+=("${USER_NAME}")
+        echo "  ⚠ ${USER_NAME} partially configured"
     else
         SKIPPED+=("${USER_NAME}")
+        echo "  ℹ ${USER_NAME} ConfigMap created (SNO pending)"
     fi
     
     echo ""
@@ -234,10 +295,10 @@ fi
 
 echo "Verification Commands:"
 echo "  # Check secrets for a user"
-echo "  oc get secrets -n workshop-student1 -l controller.devfile.io/mount-to-devworkspace=true"
+echo "  oc get secrets -n workshop-${USER_PREFIX}1 -l controller.devfile.io/mount-to-devworkspace=true"
 echo ""
 echo "  # Check secret content"
-echo "  oc get secret student1-kubeconfig -n workshop-student1 -o yaml"
+echo "  oc get secret ${USER_PREFIX}1-kubeconfig -n workshop-${USER_PREFIX}1 -o yaml"
 echo ""
 echo "Dev Spaces Usage:"
 echo "  1. Users start their workspace in Dev Spaces"

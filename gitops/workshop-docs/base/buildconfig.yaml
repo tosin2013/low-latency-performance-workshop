@@ -11,11 +11,8 @@ spec:
       kind: ImageStreamTag
       name: workshop-docs:latest
   source:
-    type: Git
-    git:
-      uri: https://github.com/tosin2013/low-latency-performance-workshop.git
-      ref: feat/deployment-automation
-    contextDir: /
+    type: Binary
+    # Use local files with: oc start-build workshop-docs --from-dir=.
   strategy:
     type: Docker
     dockerStrategy:
@@ -34,8 +31,7 @@ spec:
           value: "bastion.workshop-user1.example.com"
         - name: SUBDOMAIN_SUFFIX
           value: ".example.com"
-  triggers:
-    - type: ConfigChange
+  triggers: []
   runPolicy: Serial
   resources:
     requests:

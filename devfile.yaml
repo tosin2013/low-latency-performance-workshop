@@ -4,8 +4,7 @@ metadata:
   displayName: Low-Latency Performance Workshop
   description: |
     Development workspace for the Low-Latency Performance Workshop for OpenShift.
-    Your SNO cluster credentials are automatically mounted.
-    Access your personalized documentation at: https://docs-{username}.apps.{cluster-domain}
+    Login to your SNO cluster using the credentials provided by your workshop admin.
   version: 1.0.0
   tags:
     - OpenShift
@@ -16,9 +15,9 @@ metadata:
   icon: https://www.redhat.com/favicon.ico
   language: Shell
   projectType: workshop
+
 attributes:
   controller.devfile.io/storage-type: per-user
-  # Use the che-code editor from DevWorkspaceTemplate
   controller.devfile.io/editor-name: che-code
   .vscode/extensions.json: |
     {
@@ -37,10 +36,8 @@ projects:
       checkoutFrom:
         revision: feat/deployment-automation
 
-# Main development container
+# Components
 components:
-  # Note: che-code editor is injected automatically from DevWorkspaceTemplate
-  
   - name: tools
     container:
       image: quay.io/devspaces/udi-rhel8:latest
@@ -50,59 +47,29 @@ components:
       cpuRequest: 500m
       mountSources: true
       sourceMapping: /projects
-      
-      # Environment variables
       env:
-        # Kubeconfig location (auto-mounted by Dev Spaces from labeled secret)
         - name: KUBECONFIG
           value: /home/user/.kube/config
-        
-        # Workshop configuration
         - name: WORKSHOP_HOME
           value: /projects/workshop
-        
-        # Add local bin to PATH for kube-burner and other tools
         - name: PATH
           value: /home/user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        
-        # Ansible configuration
-        - name: ANSIBLE_HOST_KEY_CHECKING
-          value: "False"
-        
-        # Terminal colors
         - name: TERM
           value: xterm-256color
-
-      # Volume mounts for workshop artifacts
       volumeMounts:
         - name: workshop-data
           path: /home/user/workshop-data
-        # Note: SNO info ConfigMap is auto-mounted by Dev Spaces via labels:
-        #   controller.devfile.io/mount-to-devworkspace: "true"
-        #   controller.devfile.io/watch-configmap: "true"
-        # The ConfigMap is created by 08-provision-complete-workshop.sh
-        # and mounted at /home/user/sno-info
-      
-      # Endpoints (for any local services if needed)
-      endpoints:
-        - name: local-server
-          targetPort: 8080
-          exposure: public
-          protocol: http
 
-  # Persistent volume for workshop data
   - name: workshop-data
     volume:
       size: 2Gi
-  
-  # Note: checode volume is provided by the che-code DevWorkspaceTemplate
 
-# Commands available in the workspace
+# Commands
 commands:
-  # Welcome message with user info and docs URL
+  # Welcome message with user info
   - id: show-workshop-info
     exec:
-      label: "★ Workshop Info & Docs URL"
+      label: "Workshop Info"
       component: tools
       workingDir: /projects/workshop
       commandLine: |
@@ -111,343 +78,19 @@ commands:
         echo "║     LOW-LATENCY PERFORMANCE WORKSHOP                               ║"
         echo "╚════════════════════════════════════════════════════════════════════╝"
         echo ""
-        
-        # Try to get cluster domain from current context
-        if oc whoami &>/dev/null; then
-          HUB_API=$(oc whoami --show-server 2>/dev/null || echo "unknown")
-          HUB_DOMAIN=$(echo "$HUB_API" | sed 's|https://api\.||' | sed 's|:6443||')
-          APPS_DOMAIN="apps.${HUB_DOMAIN}"
-        else
-          APPS_DOMAIN="apps.{your-cluster-domain}"
-        fi
-        
-        # Get username from DevWorkspace or namespace
-        if [ -n "$DEVWORKSPACE_NAMESPACE" ]; then
-          # Extract username from namespace (e.g., user1-devspaces -> user1)
-          USERNAME=$(echo "$DEVWORKSPACE_NAMESPACE" | sed 's/-devspaces$//')
-        else
-          USERNAME="{your-username}"
-        fi
-        
-        # Check for SNO info from mounted ConfigMap
-        if [ -f /home/user/sno-info/SNO_API_URL ]; then
-          SNO_API=$(cat /home/user/sno-info/SNO_API_URL)
-          SNO_CONSOLE=$(cat /home/user/sno-info/SNO_CONSOLE_URL 2>/dev/null || echo "")
-          SNO_READY="✅ Available"
-        else
-          SNO_API="https://api.workshop-${USERNAME}.{domain}:6443"
-          SNO_CONSOLE="https://console-openshift-console.apps.workshop-${USERNAME}.{domain}"
-          SNO_READY="⏳ Check with admin if SNO is deployed"
-        fi
-        
-        echo "  📚 YOUR PERSONALIZED DOCUMENTATION:"
-        echo "     https://docs-${USERNAME}.${APPS_DOMAIN}"
+        USERNAME="${DEVWORKSPACE_NAMESPACE%-devspaces}"
+        echo "  Username: ${USERNAME}"
         echo ""
-        echo "  ────────────────────────────────────────────────────────────────────"
+        echo "  To login to your SNO cluster:"
+        echo "    oc login https://api.workshop-${USERNAME}.<domain>:6443 -u ${USERNAME} -p <password>"
         echo ""
-        echo "  🖥️  YOUR SNO CLUSTER:"
-        echo "     API:     ${SNO_API}"
-        echo "     Console: ${SNO_CONSOLE}"
-        echo "     Status:  ${SNO_READY}"
-        echo ""
-        echo "  ────────────────────────────────────────────────────────────────────"
-        echo ""
-        echo "  📁 MOUNTED CREDENTIALS:"
-        if [ -f /home/user/.kube/config ] && ! grep -q "Placeholder" /home/user/.kube/config 2>/dev/null; then
-          echo "     ✅ Kubeconfig: /home/user/.kube/config"
-        else
-          echo "     ⏳ Kubeconfig: Pending (login manually with 'oc login')"
-        fi
-        if [ -f /home/user/.ssh/id_rsa ] && ! grep -q "Placeholder" /home/user/.ssh/id_rsa 2>/dev/null; then
-          echo "     ✅ SSH Key: /home/user/.ssh/id_rsa"
-        else
-          echo "     ⏳ SSH Key: Pending"
-        fi
-        echo ""
-        echo "  ────────────────────────────────────────────────────────────────────"
-        echo ""
-        echo "  🚀 QUICK START:"
-        echo "     1. Open your docs URL above in a new browser tab"
-        echo "     2. Run 'oc get nodes' to verify cluster access"
-        echo "     3. Follow the workshop modules in the docs"
-        echo ""
-        echo "╚════════════════════════════════════════════════════════════════════╝"
+        echo "  See module-02 documentation for your specific cluster details."
         echo ""
       group:
         kind: run
         isDefault: true
 
-  # Cluster safety check - ensures user is on SNO, not hub cluster
-  - id: check-cluster-safety
-    exec:
-      label: "0. Check Cluster Safety"
-      component: tools
-      workingDir: /projects/workshop
-      commandLine: |
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  Cluster Safety Check                                      ║"
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo ""
-        
-        # Check if logged in
-        if ! oc whoami &>/dev/null; then
-          echo "⚠ Not logged into any cluster"
-          echo ""
-          echo "Please login to your SNO (target) cluster:"
-          echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
-          exit 0
-        fi
-        
-        CURRENT_SERVER=$(oc whoami --show-server 2>/dev/null)
-        CURRENT_USER=$(oc whoami 2>/dev/null)
-        
-        echo "Current Context:"
-        echo "  Server: $CURRENT_SERVER"
-        echo "  User: $CURRENT_USER"
-        echo ""
-        
-        # Check for hub cluster indicators
-        IS_HUB=false
-        
-        # Check 1: RHACM ManagedCluster CRD exists (hub has this)
-        if oc get crd managedclusters.cluster.open-cluster-management.io &>/dev/null; then
-          # Check if there are managed clusters (hub manages others)
-          MANAGED_COUNT=$(oc get managedclusters --no-headers 2>/dev/null | wc -l)
-          if [ "$MANAGED_COUNT" -gt "0" ]; then
-            IS_HUB=true
-          fi
-        fi
-        
-        # Check 2: Dev Spaces namespace exists (hub usually has this)
-        if oc get namespace openshift-devspaces &>/dev/null; then
-          # If devspaces exists AND managedclusters exist, likely hub
-          if oc get crd managedclusters.cluster.open-cluster-management.io &>/dev/null; then
-            IS_HUB=true
-          fi
-        fi
-        
-        # Check 3: Cluster name contains "hub" or common hub patterns
-        if echo "$CURRENT_SERVER" | grep -qiE "(hub|rhacm|acm)"; then
-          IS_HUB=true
-        fi
-        
-        # Check 4: Single Node OpenShift check (SNO has only 1 node with master role)
-        NODE_COUNT=$(oc get nodes --no-headers 2>/dev/null | wc -l)
-        MASTER_WORKER=$(oc get nodes --no-headers 2>/dev/null | grep -c "master.*worker\|worker.*master" || echo "0")
-        
-        if [ "$IS_HUB" = true ]; then
-          echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║  ⚠️  WARNING: YOU ARE ON THE HUB CLUSTER!                   ║"
-          echo "╠════════════════════════════════════════════════════════════╣"
-          echo "║  Workshop modules should run on your SNO (target) cluster  ║"
-          echo "║  Running tests here could affect the management cluster!   ║"
-          echo "╚════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Please switch to your SNO cluster:"
-          echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
-          echo ""
-          echo "To find your SNO cluster credentials, check:"
-          echo "  cat /home/user/sno-info/SNO_API 2>/dev/null"
-          echo "  cat /home/user/sno-info/SNO_PASSWORD 2>/dev/null"
-          exit 1
-        elif [ "$NODE_COUNT" -eq "1" ] || [ "$MASTER_WORKER" -gt "0" ]; then
-          echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║  ✅ Connected to SNO (Single Node OpenShift) cluster       ║"
-          echo "╚════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Node count: $NODE_COUNT"
-          oc get nodes
-        else
-          echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║  ⚠️  CLUSTER TYPE UNCLEAR                                   ║"
-          echo "╚════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Node count: $NODE_COUNT"
-          echo "Please verify this is your target cluster (not the hub)."
-          oc get nodes
-        fi
-      group:
-        kind: run
-        isDefault: true
-
-  # Verification commands
-  - id: verify-sno-access
-    exec:
-      label: "1. Verify SNO Cluster Access"
-      component: tools
-      workingDir: /projects/workshop
-      commandLine: |
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  Verifying SNO Cluster Access                              ║"
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo ""
-        if [ -f /home/user/.kube/config ]; then
-          echo "✓ Kubeconfig found at /home/user/.kube/config"
-          echo ""
-          echo "Cluster Info:"
-          oc cluster-info 2>/dev/null || echo "⚠ Cannot connect to cluster yet"
-          echo ""
-          echo "Nodes:"
-          oc get nodes 2>/dev/null || echo "⚠ Cannot get nodes"
-        else
-          echo "✗ Kubeconfig not found"
-          echo ""
-          echo "To login manually to your SNO cluster (NOT the hub!):"
-          echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
-        fi
-      group:
-        kind: run
-
-  - id: verify-ssh-access
-    exec:
-      label: "2. Verify SSH Key"
-      component: tools
-      workingDir: /projects/workshop
-      commandLine: |
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  Verifying SSH Key                                         ║"
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo ""
-        if [ -f /home/user/.ssh/id_rsa ]; then
-          echo "✓ SSH key found at /home/user/.ssh/id_rsa"
-          chmod 600 /home/user/.ssh/id_rsa
-          echo ""
-          echo "SSH Key fingerprint:"
-          ssh-keygen -lf /home/user/.ssh/id_rsa 2>/dev/null || echo "Could not read key"
-        else
-          echo "✗ SSH key not found"
-          echo "The SNO cluster may not be deployed yet."
-        fi
-      group:
-        kind: run
-
-  - id: check-environment
-    exec:
-      label: "3. Check Workshop Environment"
-      component: tools
-      workingDir: /projects/workshop
-      commandLine: |
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  Workshop Environment Check                                ║"
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo ""
-        echo "Tools Available:"
-        echo "  oc: $(oc version --client 2>/dev/null | head -1 || echo 'not found')"
-        echo "  kubectl: $(kubectl version --client 2>/dev/null | head -1 || echo 'not found')"
-        echo "  git: $(git --version 2>/dev/null || echo 'not found')"
-        echo "  yq: $(yq --version 2>/dev/null || echo 'not found')"
-        echo "  ansible: $(ansible --version 2>/dev/null | head -1 || echo 'not found')"
-        echo ""
-        echo "Environment Variables:"
-        echo "  KUBECONFIG: ${KUBECONFIG:-not set}"
-        echo "  WORKSHOP_HOME: ${WORKSHOP_HOME:-not set}"
-        echo ""
-        echo "Mounted Secrets:"
-        [ -f /home/user/.kube/config ] && echo "  ✓ Kubeconfig" || echo "  ✗ Kubeconfig (login manually with 'oc login')"
-        [ -f /home/user/.ssh/id_rsa ] && echo "  ✓ SSH Key" || echo "  ✗ SSH Key (pending)"
-      group:
-        kind: run
-
-  # Module setup commands
-  - id: setup-module02
-    exec:
-      label: "Module 02: Setup RHACM"
-      component: tools
-      workingDir: /projects/workshop
-      commandLine: |
-        echo "Running Module 02 RHACM Setup..."
-        echo ""
-        
-        # Safety check - Module 02 actually runs on hub for RHACM setup
-        # This is one of the few modules that needs hub access
-        if ! oc whoami &>/dev/null; then
-          echo "❌ Not logged into any cluster. Please login first."
-          exit 1
-        fi
-        
-        echo "ℹ️  Note: Module 02 configures RHACM on the hub cluster."
-        echo "   Make sure you're logged into the correct cluster for this step."
-        echo ""
-        
-        if [ -f workshop-scripts/09-setup-module02-rhacm.sh ]; then
-          ./workshop-scripts/09-setup-module02-rhacm.sh
-        else
-          echo "Setup script not found. Manual setup required."
-          echo "See: content/modules/ROOT/pages/module-02-rhacm-setup.adoc"
-        fi
-      group:
-        kind: run
-
-  # Open documentation (served by OpenShift)
-  - id: open-docs
-    exec:
-      label: "📚 Open Workshop Documentation"
-      component: tools
-      workingDir: /projects/workshop
-      commandLine: |
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  Workshop Documentation                                    ║"
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo ""
-        echo "Your personalized workshop documentation is served by OpenShift."
-        echo ""
-        
-        # Get username and cluster domain
-        if [ -n "$DEVWORKSPACE_NAMESPACE" ]; then
-          USERNAME=$(echo "$DEVWORKSPACE_NAMESPACE" | sed 's/-devspaces$//')
-        else
-          USERNAME="userN"
-        fi
-        
-        if oc whoami &>/dev/null; then
-          HUB_API=$(oc config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || oc whoami --show-server)
-          APPS_DOMAIN=$(echo "$HUB_API" | sed 's|https://api\.||' | sed 's|:6443||' | sed 's/^/apps./')
-        else
-          APPS_DOMAIN="apps.{your-cluster}.{domain}"
-        fi
-        
-        DOCS_URL="https://docs-${USERNAME}.${APPS_DOMAIN}"
-        
-        echo "  📖 YOUR DOCS URL:"
-        echo ""
-        echo "     ${DOCS_URL}"
-        echo ""
-        echo "  ────────────────────────────────────────────────────────────"
-        echo ""
-        echo "  Open this URL in your browser to access the workshop content."
-        echo "  The documentation is personalized with your SNO cluster URLs."
-        echo ""
-        
-        # Check if docs route exists
-        if oc get route docs-${USERNAME} -n workshop-${USERNAME} &>/dev/null; then
-          echo "  ✅ Documentation is deployed and ready!"
-        else
-          echo "  ⚠️  Documentation route not found. Check with admin."
-        fi
-      group:
-        kind: run
-
-  # SSH to bastion
-  - id: ssh-bastion
-    exec:
-      label: "SSH to Bastion"
-      component: tools
-      workingDir: /projects/workshop
-      commandLine: |
-        echo "Connecting to bastion..."
-        if [ -f /home/user/.ssh/id_rsa ]; then
-          chmod 600 /home/user/.ssh/id_rsa
-          # Get bastion hostname from SNO info ConfigMap if available
-          BASTION_HOST=$(cat /home/user/sno-info/BASTION_HOST 2>/dev/null || echo "bastion.workshop-student1.example.com")
-          echo "Attempting SSH to: ec2-user@${BASTION_HOST}"
-          ssh -o StrictHostKeyChecking=no -i /home/user/.ssh/id_rsa ec2-user@${BASTION_HOST}
-        else
-          echo "SSH key not available yet"
-        fi
-      group:
-        kind: run
-
-  # Install kube-burner
+  # Install kube-burner (required for performance testing)
   - id: install-kube-burner
     exec:
       label: "Install kube-burner"
@@ -463,77 +106,21 @@ commands:
           kube-burner version
         else
           echo "Downloading kube-burner..."
-          mkdir -p ~/kube-burner
+          mkdir -p ~/.local/bin ~/kube-burner
           cd ~/kube-burner
           curl -sL https://github.com/kube-burner/kube-burner/releases/download/v1.17.5/kube-burner-V1.17.5-linux-x86_64.tar.gz -o kube-burner.tar.gz
           tar -xzf kube-burner.tar.gz
           chmod +x kube-burner
-          mv kube-burner /home/user/.local/bin/ 2>/dev/null || mkdir -p /home/user/.local/bin && mv kube-burner /home/user/.local/bin/
+          mv kube-burner ~/.local/bin/
           rm -rf ~/kube-burner
           echo ""
           echo "✓ kube-burner installed successfully!"
-          /home/user/.local/bin/kube-burner version
+          ~/.local/bin/kube-burner version
         fi
       group:
         kind: build
 
-  # Run kube-burner baseline test
-  - id: run-baseline-test
-    exec:
-      label: "Module 03: Run Baseline Test"
-      component: tools
-      workingDir: /projects/workshop/gitops/kube-burner-configs
-      commandLine: |
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  Module 03: Baseline Performance Test                      ║"
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo ""
-        export PATH=$PATH:/home/user/.local/bin
-        
-        # Safety check - ensure we're on SNO, not hub
-        if ! oc whoami &>/dev/null; then
-          echo "❌ Not logged into any cluster. Please login to your SNO cluster first."
-          exit 1
-        fi
-        
-        # Check for hub cluster indicators
-        if oc get crd managedclusters.cluster.open-cluster-management.io &>/dev/null; then
-          MANAGED_COUNT=$(oc get managedclusters --no-headers 2>/dev/null | wc -l)
-          if [ "$MANAGED_COUNT" -gt "0" ]; then
-            echo "╔════════════════════════════════════════════════════════════╗"
-            echo "║  ❌ ERROR: YOU ARE ON THE HUB CLUSTER!                     ║"
-            echo "╠════════════════════════════════════════════════════════════╣"
-            echo "║  Performance tests MUST run on your SNO (target) cluster   ║"
-            echo "║  Running tests on the hub could affect management ops!     ║"
-            echo "╚════════════════════════════════════════════════════════════╝"
-            echo ""
-            echo "Please switch to your SNO cluster first:"
-            echo "  oc login https://api.<your-sno-cluster>:6443 -u kubeadmin -p <password>"
-            exit 1
-          fi
-        fi
-        
-        echo "✓ Cluster check passed - proceeding with baseline test"
-        echo "  Server: $(oc whoami --show-server)"
-        echo ""
-        
-        if command -v kube-burner &> /dev/null; then
-          if [ -f run-test.sh ]; then
-            ./run-test.sh baseline
-          else
-            echo "Test script not found. Running manual baseline test..."
-            cd ~/kube-burner-configs 2>/dev/null || mkdir -p ~/kube-burner-configs && cd ~/kube-burner-configs
-            kube-burner init -c /projects/workshop/gitops/kube-burner-configs/baseline-config.yml --log-level=info
-          fi
-        else
-          echo "kube-burner not found. Run 'Install kube-burner' first."
-        fi
-      group:
-        kind: run
-
-# Events for workspace lifecycle
+# Install kube-burner on workspace start
 events:
   postStart:
-    - show-workshop-info
     - install-kube-burner
-    - check-cluster-safety

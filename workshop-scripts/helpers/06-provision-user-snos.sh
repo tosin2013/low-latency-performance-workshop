@@ -3,47 +3,63 @@
 # Deploys SNO clusters in parallel for efficiency
 #
 # Usage:
-#   ./06-provision-user-snos.sh [num_users] [parallel_jobs] [user_prefix]
+#   ./06-provision-user-snos.sh [num_users] [parallel_jobs] [user_prefix] [start_user]
 #
 # Examples:
-#   ./06-provision-user-snos.sh           # Deploy 5 users (user1-user5), 3 parallel
-#   ./06-provision-user-snos.sh 5 2       # Deploy 5 users, 2 at a time
-#   ./06-provision-user-snos.sh 5 3 student # Deploy student1-student5
+#   ./06-provision-user-snos.sh              # Deploy 5 users (user1-user5), 3 parallel
+#   ./06-provision-user-snos.sh 5 2          # Deploy 5 users, 2 at a time
+#   ./06-provision-user-snos.sh 5 3 student  # Deploy student1-student5
+#   ./06-provision-user-snos.sh 10 3 student 6  # Deploy student6-student10 (n+1 mode)
 #
 # Prerequisites:
 #   - Run 01-setup-ansible-navigator.sh
 #   - Run 02-configure-aws-credentials.sh
 #   - Logged into hub cluster
+#
+# n+1 Deployment:
+#   Set START_USER > 1 to add more users to an existing deployment
+#   Existing users will be SKIPPED if their credentials already exist
 
 set -e
 
 NUM_USERS=${1:-5}
 PARALLEL_JOBS=${2:-3}
 USER_PREFIX=${3:-user}
+START_USER=${4:-1}
 WORKSHOP_DIR="/home/lab-user/low-latency-performance-workshop"
 LOG_DIR="/tmp/sno-provision-$(date +%Y%m%d-%H%M%S)"
 OUTPUT_DIR="${HOME}/agnosticd-output"
+ENV_TYPE="low-latency-workshop-sno"
+
+# Calculate users to deploy
+USERS_TO_DEPLOY=$((NUM_USERS - START_USER + 1))
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║     MULTI-USER SNO CLUSTER PROVISIONING                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Configuration:"
-echo "  Users: ${USER_PREFIX}1 - ${USER_PREFIX}${NUM_USERS}"
+echo "  Users: ${USER_PREFIX}${START_USER} - ${USER_PREFIX}${NUM_USERS}"
+echo "  Users to deploy: ${USERS_TO_DEPLOY}"
 echo "  Parallel jobs: ${PARALLEL_JOBS}"
 echo "  Log directory: ${LOG_DIR}"
-echo "  Estimated time: $((NUM_USERS * 45 / PARALLEL_JOBS)) minutes"
+echo "  Estimated time: $((USERS_TO_DEPLOY * 45 / PARALLEL_JOBS)) minutes"
 echo ""
+if [ ${START_USER} -gt 1 ]; then
+    echo "⚡ n+1 DEPLOYMENT MODE: Deploying users ${START_USER}-${NUM_USERS}"
+    echo "   Existing users will be skipped if credentials exist"
+    echo ""
+fi
 
 # ============================================
 # Prerequisites Check
 # ============================================
 echo "[1/4] Checking prerequisites..."
 
-# Check 03-test-single-sno.sh exists
-if [ ! -f "${WORKSHOP_DIR}/workshop-scripts/03-test-single-sno.sh" ]; then
+# Check deploy-single-sno.sh exists
+if [ ! -f "${WORKSHOP_DIR}/workshop-scripts/helpers/deploy-single-sno.sh" ]; then
     echo "✗ SNO deployment script not found"
-    echo "Expected: ${WORKSHOP_DIR}/workshop-scripts/03-test-single-sno.sh"
+    echo "Expected: ${WORKSHOP_DIR}/workshop-scripts/helpers/deploy-single-sno.sh"
     exit 1
 fi
 echo "✓ SNO deployment script found"
@@ -122,11 +138,32 @@ wait_for_slot() {
                 # Job completed
                 wait ${PIDS[$i]} 2>/dev/null || true
                 unset PIDS[$i]
-                ((CURRENT_JOBS--)) || true
+                ((CURRENT_JOBS--)) || true  # Prevent exit on arithmetic returning 0
             fi
         done
         sleep 5
     done
+}
+
+# Check if user already deployed (has valid credentials)
+check_existing_deployment() {
+    local USER_NUM=$1
+    local DEPLOY_USER="${USER_PREFIX}${USER_NUM}"
+    local GUID="workshop-${DEPLOY_USER}"
+
+    # Check for AgnosticD official naming pattern
+    local KUBECONFIG_PATH="${OUTPUT_DIR}/${GUID}/${ENV_TYPE}_${GUID}_kubeconfig"
+    local KUBEADMIN_PATH="${OUTPUT_DIR}/${GUID}/${ENV_TYPE}_${GUID}_kubeadmin-password"
+
+    # Also check legacy paths
+    local KUBECONFIG_SYMLINK="${OUTPUT_DIR}/${GUID}/kubeconfig"
+
+    if [ -f "${KUBECONFIG_PATH}" ] && [ -f "${KUBEADMIN_PATH}" ]; then
+        return 0  # Already deployed
+    elif [ -f "${KUBECONFIG_SYMLINK}" ]; then
+        return 0  # Already deployed (legacy)
+    fi
+    return 1  # Not deployed
 }
 
 # Function to deploy single SNO
@@ -134,31 +171,48 @@ deploy_sno() {
     local USER_NUM=$1
     local DEPLOY_USER="${USER_PREFIX}${USER_NUM}"
     local LOG_FILE="${LOG_DIR}/provision-${DEPLOY_USER}.log"
-    
+
     echo "  → Starting ${DEPLOY_USER} (log: ${LOG_FILE})"
-    
+
     # Run deployment in subshell, capture exit code
     (
-        ./03-test-single-sno.sh ${DEPLOY_USER} rhpds > ${LOG_FILE} 2>&1
+        ./helpers/deploy-single-sno.sh ${DEPLOY_USER} rhpds > ${LOG_FILE} 2>&1
         EXIT_CODE=$?
         echo ${EXIT_CODE} > ${LOG_DIR}/${DEPLOY_USER}.exitcode
         exit ${EXIT_CODE}
     ) &
-    
+
     PIDS+=($!)
     USERS+=("${DEPLOY_USER}")
-    ((CURRENT_JOBS++))
+    ((CURRENT_JOBS++)) || true  # Prevent exit on arithmetic returning 0
 }
 
-# Deploy all users
+# Deploy all users (starting from START_USER)
 echo "Starting parallel deployment (${PARALLEL_JOBS} at a time)..."
 echo ""
 
-for i in $(seq 1 ${NUM_USERS}); do
+SKIPPED_USERS=0
+for i in $(seq ${START_USER} ${NUM_USERS}); do
+    # Check if user already deployed
+    if check_existing_deployment ${i}; then
+        DEPLOY_USER="${USER_PREFIX}${i}"
+        GUID="workshop-${DEPLOY_USER}"
+        echo "  ⏭ ${DEPLOY_USER}: Already deployed (credentials found at ${OUTPUT_DIR}/${GUID}/)"
+        echo "0" > ${LOG_DIR}/${DEPLOY_USER}.exitcode
+        echo "SKIPPED - already deployed" > ${LOG_DIR}/provision-${DEPLOY_USER}.log
+        ((SKIPPED_USERS++)) || true
+        continue
+    fi
+
     wait_for_slot
     deploy_sno ${i}
     sleep 10  # Stagger starts to avoid AWS API throttling
 done
+
+if [ ${SKIPPED_USERS} -gt 0 ]; then
+    echo ""
+    echo "ℹ Skipped ${SKIPPED_USERS} already-deployed user(s)"
+fi
 
 # Wait for all remaining jobs
 echo ""
@@ -182,25 +236,30 @@ echo ""
 
 declare -a SUCCESSFUL
 declare -a FAILED
+declare -a SKIPPED
 
-for i in $(seq 1 ${NUM_USERS}); do
+for i in $(seq ${START_USER} ${NUM_USERS}); do
     DEPLOY_USER="${USER_PREFIX}${i}"
     EXITCODE_FILE="${LOG_DIR}/${DEPLOY_USER}.exitcode"
     GUID="workshop-${DEPLOY_USER}"
-    
+
     if [ -f ${EXITCODE_FILE} ]; then
         EXITCODE=$(cat ${EXITCODE_FILE})
-        if [ "${EXITCODE}" == "0" ]; then
-            # Check if kubeconfig exists
-            if [ -f "${OUTPUT_DIR}/${GUID}/kubeconfig" ] || [ -f "${OUTPUT_DIR}/${GUID}/low-latency-workshop-sno_${GUID}_kubeconfig" ]; then
+        # Check if this was a skipped deployment
+        if grep -q "SKIPPED" ${LOG_DIR}/provision-${DEPLOY_USER}.log 2>/dev/null; then
+            echo "  ⏭ ${DEPLOY_USER}: Skipped (already deployed)"
+            SKIPPED+=("${DEPLOY_USER}")
+        elif [ "${EXITCODE}" == "0" ]; then
+            # Check if kubeconfig exists (using AgnosticD naming convention)
+            if [ -f "${OUTPUT_DIR}/${GUID}/${ENV_TYPE}_${GUID}_kubeconfig" ] || [ -f "${OUTPUT_DIR}/${GUID}/kubeconfig" ]; then
                 echo "  ✓ ${DEPLOY_USER}: SNO deployed successfully"
-                
+
                 # Check RHACM import
                 if oc get managedcluster workshop-${DEPLOY_USER} &> /dev/null; then
                     STATUS=$(oc get managedcluster workshop-${DEPLOY_USER} -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
                     echo "    RHACM Status: ${STATUS}"
                 fi
-                
+
                 SUCCESSFUL+=("${DEPLOY_USER}")
             else
                 echo "  ⚠ ${DEPLOY_USER}: Completed but kubeconfig missing"

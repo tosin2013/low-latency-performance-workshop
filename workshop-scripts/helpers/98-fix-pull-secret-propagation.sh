@@ -17,7 +17,7 @@ if [ -z "$STUDENT_NAME" ]; then
   exit 1
 fi
 
-GUID="test-${STUDENT_NAME}"
+GUID="workshop-${STUDENT_NAME}"
 OUTPUT_DIR="${HOME}/agnosticd-output/${GUID}"
 KUBECONFIG_FILE="${OUTPUT_DIR}/low-latency-workshop-sno_${GUID}_kubeconfig"
 

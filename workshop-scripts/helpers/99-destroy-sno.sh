@@ -3,7 +3,7 @@
 
 set -e
 
-STUDENT_NAME=${1:-student1}
+STUDENT_NAME=${1:-user1}
 DEPLOYMENT_MODE=${2:-rhpds}
 
 AGNOSTICD_DIR=~/agnosticd
@@ -22,7 +22,7 @@ echo " Destroy SNO Deployment"
 echo "============================================"
 echo ""
 echo "Student: ${STUDENT_NAME}"
-echo "GUID: test-${STUDENT_NAME}"
+echo "GUID: workshop-${STUDENT_NAME}"
 echo "Mode: ${DEPLOYMENT_MODE}"
 echo ""
 
@@ -131,7 +131,7 @@ ANSIBLE_NAVIGATOR_CMD="ansible-navigator run ansible/main.yml \
   -e @/runner/secrets-ec2.yml \
   -e env_type=low-latency-workshop-sno \
   -e ACTION=destroy \
-  -e guid=test-${STUDENT_NAME} \
+  -e guid=workshop-${STUDENT_NAME} \
   -e student_name=${STUDENT_NAME}"
 
 # Add hub details for RHPDS mode
@@ -155,7 +155,7 @@ echo " Destroy Summary"
 echo "============================================"
 echo ""
 echo "Student: ${STUDENT_NAME}"
-echo "GUID: test-${STUDENT_NAME}"
+echo "GUID: workshop-${STUDENT_NAME}"
 echo "Mode: ${DEPLOYMENT_MODE}"
 echo "Log: /tmp/destroy-${STUDENT_NAME}.log"
 echo ""
@@ -168,11 +168,11 @@ if [ "${DEPLOYMENT_MODE}" == "rhpds" ] && [ -n "${HUB_API_URL}" ]; then
 fi
 
 echo "To verify AWS cleanup:"
-echo "  aws ec2 describe-instances --region ${AWS_REGION} --filters \"Name=tag:guid,Values=test-${STUDENT_NAME}\""
+echo "  aws ec2 describe-instances --region ${AWS_REGION} --filters \"Name=tag:guid,Values=workshop-${STUDENT_NAME}\""
 echo "  (should return: empty or terminated)"
 echo ""
 echo "To verify VPC cleanup:"
-echo "  aws ec2 describe-vpcs --region ${AWS_REGION} --filters \"Name=tag:guid,Values=test-${STUDENT_NAME}\""
+echo "  aws ec2 describe-vpcs --region ${AWS_REGION} --filters \"Name=tag:guid,Values=workshop-${STUDENT_NAME}\""
 echo "  (should return: empty)"
 echo ""
 

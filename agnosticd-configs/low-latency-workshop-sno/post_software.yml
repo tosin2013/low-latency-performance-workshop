@@ -328,33 +328,499 @@
         - output_dir is defined
         - agnosticd_save_output_dir | default(true) | bool
     
+    # ============================================================
+    # Deploy Workshop Operators to SNO
+    # These operators are required for workshop exercises:
+    # - OpenShift Virtualization (Module 5)
+    # - SR-IOV Network Operator (Module 5)
+    # ============================================================
+    - name: Deploy Workshop Operators to SNO
+      when: deploy_workshop_operators | default(true) | bool
+      vars:
+        __sno_api_url: "https://api.{{ guid }}{{ subdomain_base_suffix }}:6443"
+        __sno_kubeconfig: "{{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig"
+      block:
+        - name: Display operator deployment start
+          debug:
+            msg:
+              - "Deploying workshop operators to SNO {{ guid }}"
+              - "LVM Storage Operator: {{ deploy_lvm_storage | default(true) }}"
+              - "OpenShift Virtualization: {{ deploy_openshift_virtualization | default(true) }}"
+              - "SR-IOV Network Operator: {{ deploy_sriov_operator | default(true) }}"
+
+        # LVM Storage Operator (Required for RWX storage on SNO for OpenShift Virtualization)
+        - name: Deploy LVM Storage Operator
+          when: deploy_lvm_storage | default(true) | bool
+          block:
+            - name: Create openshift-lvm-storage namespace
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: v1
+                  kind: Namespace
+                  metadata:
+                    name: openshift-lvm-storage
+
+            - name: Create LVM Storage OperatorGroup
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: operators.coreos.com/v1
+                  kind: OperatorGroup
+                  metadata:
+                    name: lvm-operator-group
+                    namespace: openshift-lvm-storage
+                  spec:
+                    targetNamespaces:
+                      - openshift-lvm-storage
+
+            - name: Create LVM Storage Operator Subscription
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: operators.coreos.com/v1alpha1
+                  kind: Subscription
+                  metadata:
+                    name: lvms-operator
+                    namespace: openshift-lvm-storage
+                  spec:
+                    channel: stable-4.17
+                    installPlanApproval: Automatic
+                    name: lvms-operator
+                    source: redhat-operators
+                    sourceNamespace: openshift-marketplace
+
+            - name: Wait for LVM Storage CSV to be ready
+              kubernetes.core.k8s_info:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                api_version: operators.coreos.com/v1alpha1
+                kind: ClusterServiceVersion
+                namespace: openshift-lvm-storage
+                label_selectors:
+                  - operators.coreos.com/lvms-operator.openshift-lvm-storage
+              register: __r_lvm_csv
+              retries: 60
+              delay: 15
+              until:
+                - __r_lvm_csv.resources | length > 0
+                - __r_lvm_csv.resources[0].status.phase is defined
+                - __r_lvm_csv.resources[0].status.phase == "Succeeded"
+              ignore_errors: true
+
+            - name: Create LVMCluster for SNO
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: lvm.topolvm.io/v1alpha1
+                  kind: LVMCluster
+                  metadata:
+                    name: lvmcluster
+                    namespace: openshift-lvm-storage
+                  spec:
+                    storage:
+                      deviceClasses:
+                        - name: vg1
+                          default: true
+                          fstype: xfs
+                          thinPoolConfig:
+                            name: thin-pool-1
+                            sizePercent: 90
+                            overprovisionRatio: 10
+              when: __r_lvm_csv.resources | length > 0
+
+            - name: Wait for LVMCluster to be ready
+              kubernetes.core.k8s_info:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                api_version: lvm.topolvm.io/v1alpha1
+                kind: LVMCluster
+                name: lvmcluster
+                namespace: openshift-lvm-storage
+              register: __r_lvm_cluster
+              retries: 30
+              delay: 10
+              until:
+                - __r_lvm_cluster.resources | length > 0
+                - __r_lvm_cluster.resources[0].status is defined
+                - __r_lvm_cluster.resources[0].status.state is defined
+                - __r_lvm_cluster.resources[0].status.state == "Ready"
+              ignore_errors: true
+
+            - name: Display LVM Storage operator status
+              debug:
+                msg: "✓ LVM Storage Operator deployed (provides RWX storage for OpenShift Virtualization on SNO)"
+
+        # OpenShift Virtualization Operator
+        - name: Deploy OpenShift Virtualization Operator
+          when: deploy_openshift_virtualization | default(true) | bool
+          block:
+            - name: Create openshift-cnv namespace
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: v1
+                  kind: Namespace
+                  metadata:
+                    name: openshift-cnv
+
+            - name: Create OpenShift Virtualization OperatorGroup
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: operators.coreos.com/v1
+                  kind: OperatorGroup
+                  metadata:
+                    name: kubevirt-hyperconverged-group
+                    namespace: openshift-cnv
+                  spec:
+                    targetNamespaces:
+                      - openshift-cnv
+
+            - name: Create OpenShift Virtualization Subscription
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: operators.coreos.com/v1alpha1
+                  kind: Subscription
+                  metadata:
+                    name: kubevirt-hyperconverged
+                    namespace: openshift-cnv
+                  spec:
+                    channel: stable
+                    installPlanApproval: Automatic
+                    name: kubevirt-hyperconverged
+                    source: redhat-operators
+                    sourceNamespace: openshift-marketplace
+                    config:
+                      env:
+                        - name: KVM_EMULATION
+                          value: "true"
+
+            - name: Wait for OpenShift Virtualization CSV to be ready
+              kubernetes.core.k8s_info:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                api_version: operators.coreos.com/v1alpha1
+                kind: ClusterServiceVersion
+                namespace: openshift-cnv
+                label_selectors:
+                  - operators.coreos.com/kubevirt-hyperconverged.openshift-cnv
+              register: __r_cnv_csv
+              retries: 60
+              delay: 15
+              until:
+                - __r_cnv_csv.resources | length > 0
+                - __r_cnv_csv.resources[0].status.phase is defined
+                - __r_cnv_csv.resources[0].status.phase == "Succeeded"
+              ignore_errors: true
+
+            - name: Create HyperConverged instance
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: hco.kubevirt.io/v1beta1
+                  kind: HyperConverged
+                  metadata:
+                    name: kubevirt-hyperconverged
+                    namespace: openshift-cnv
+                  spec:
+                    infra:
+                      nodePlacement:
+                        tolerations:
+                          - effect: NoSchedule
+                            key: node-role.kubernetes.io/master
+                            operator: Exists
+                    workloads:
+                      nodePlacement:
+                        tolerations:
+                          - effect: NoSchedule
+                            key: node-role.kubernetes.io/master
+                            operator: Exists
+              when: __r_cnv_csv.resources | length > 0
+
+            - name: Display OpenShift Virtualization status
+              debug:
+                msg: "✓ OpenShift Virtualization operator deployed (HyperConverged may take several minutes to fully initialize)"
+
+        # SR-IOV Network Operator
+        - name: Deploy SR-IOV Network Operator
+          when: deploy_sriov_operator | default(true) | bool
+          block:
+            - name: Create openshift-sriov-network-operator namespace
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: v1
+                  kind: Namespace
+                  metadata:
+                    name: openshift-sriov-network-operator
+                    labels:
+                      openshift.io/cluster-monitoring: "true"
+
+            - name: Create SR-IOV OperatorGroup
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: operators.coreos.com/v1
+                  kind: OperatorGroup
+                  metadata:
+                    name: sriov-network-operators
+                    namespace: openshift-sriov-network-operator
+                  spec:
+                    targetNamespaces:
+                      - openshift-sriov-network-operator
+
+            - name: Create SR-IOV Network Operator Subscription
+              kubernetes.core.k8s:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                state: present
+                definition:
+                  apiVersion: operators.coreos.com/v1alpha1
+                  kind: Subscription
+                  metadata:
+                    name: sriov-network-operator-subscription
+                    namespace: openshift-sriov-network-operator
+                  spec:
+                    channel: stable
+                    installPlanApproval: Automatic
+                    name: sriov-network-operator
+                    source: redhat-operators
+                    sourceNamespace: openshift-marketplace
+
+            - name: Wait for SR-IOV CSV to be ready
+              kubernetes.core.k8s_info:
+                host: "{{ __sno_api_url }}"
+                kubeconfig: "{{ __sno_kubeconfig }}"
+                validate_certs: false
+                api_version: operators.coreos.com/v1alpha1
+                kind: ClusterServiceVersion
+                namespace: openshift-sriov-network-operator
+                label_selectors:
+                  - operators.coreos.com/sriov-network-operator.openshift-sriov-network-operator
+              register: __r_sriov_csv
+              retries: 60
+              delay: 15
+              until:
+                - __r_sriov_csv.resources | length > 0
+                - __r_sriov_csv.resources[0].status.phase is defined
+                - __r_sriov_csv.resources[0].status.phase == "Succeeded"
+              ignore_errors: true
+
+            - name: Display SR-IOV operator status
+              debug:
+                msg: "✓ SR-IOV Network Operator deployed"
+
+        - name: Display operator deployment complete
+          debug:
+            msg:
+              - "✓ Workshop operators deployment complete!"
+              - "LVM Storage Operator: {{ 'Deployed' if (deploy_lvm_storage | default(true)) else 'Skipped' }}"
+              - "OpenShift Virtualization: {{ 'Deployed' if (deploy_openshift_virtualization | default(true)) else 'Skipped' }}"
+              - "SR-IOV Network Operator: {{ 'Deployed' if (deploy_sriov_operator | default(true)) else 'Skipped' }}"
+              - "Note: Operators may take several minutes to fully initialize"
+
+      rescue:
+        - name: Operator deployment warning
+          debug:
+            msg:
+              - "⚠ Some operators may not have deployed successfully"
+              - "This could be due to marketplace pods still initializing"
+              - "Verify manually: oc get csv -A"
+
+    # ============================================
+    # Create Workshop User on SNO Cluster
+    # ============================================
+    - name: Create workshop user on SNO cluster
+      when:
+        - create_workshop_user | default(true) | bool
+        - workshop_user_password is defined
+      block:
+        - name: Set workshop user credentials
+          set_fact:
+            __workshop_username: "{{ student_name }}"
+            __workshop_password: "{{ workshop_user_password }}"
+
+        - name: Generate htpasswd hash using Python passlib
+          shell: |
+            python3 -c "
+            from passlib.hash import bcrypt
+            password = '{{ __workshop_password }}'
+            hash = bcrypt.using(rounds=12).hash(password)
+            print(hash)
+            "
+          register: __r_password_hash
+          changed_when: false
+
+        - name: Create htpasswd secret for workshop user
+          kubernetes.core.k8s:
+            state: present
+            host: "{{ __sno_api_url }}"
+            kubeconfig: "{{ __sno_kubeconfig }}"
+            validate_certs: false
+            definition:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: htpasswd-workshop-secret
+                namespace: openshift-config
+              type: Opaque
+              stringData:
+                htpasswd: "{{ __workshop_username }}:{{ __r_password_hash.stdout }}"
+
+        - name: Configure OAuth with htpasswd identity provider
+          kubernetes.core.k8s:
+            state: present
+            host: "{{ __sno_api_url }}"
+            kubeconfig: "{{ __sno_kubeconfig }}"
+            validate_certs: false
+            definition:
+              apiVersion: config.openshift.io/v1
+              kind: OAuth
+              metadata:
+                name: cluster
+              spec:
+                identityProviders:
+                  - name: workshop-htpasswd
+                    type: HTPasswd
+                    mappingMethod: claim
+                    htpasswd:
+                      fileData:
+                        name: htpasswd-workshop-secret
+
+        - name: Grant cluster-admin role to workshop user
+          kubernetes.core.k8s:
+            state: present
+            host: "{{ __sno_api_url }}"
+            kubeconfig: "{{ __sno_kubeconfig }}"
+            validate_certs: false
+            definition:
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRoleBinding
+              metadata:
+                name: workshop-user-cluster-admin
+              roleRef:
+                apiGroup: rbac.authorization.k8s.io
+                kind: ClusterRole
+                name: cluster-admin
+              subjects:
+                - kind: User
+                  name: "{{ __workshop_username }}"
+                  apiGroup: rbac.authorization.k8s.io
+
+        - name: Wait for OAuth pods to restart
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: openshift-authentication
+            label_selectors:
+              - app=oauth-openshift
+            api_version: v1
+            host: "{{ __sno_api_url }}"
+            kubeconfig: "{{ __sno_kubeconfig }}"
+            validate_certs: false
+          register: __r_oauth_pods
+          retries: 30
+          delay: 10
+          until:
+            - __r_oauth_pods.resources is defined
+            - __r_oauth_pods.resources | length > 0
+            - __r_oauth_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+
+        - name: Display workshop user creation complete
+          debug:
+            msg:
+              - "✓ Workshop user created on SNO cluster!"
+              - "Username: {{ __workshop_username }}"
+              - "Login: oc login {{ __sno_api_url }} -u {{ __workshop_username }} -p <password>"
+
+    - name: Skip workshop user creation
+      when: workshop_user_password is not defined
+      debug:
+        msg: "⚠ Skipping workshop user creation - workshop_user_password not provided"
+
     - name: Save deployment summary
       copy:
         content: |
           Low-Latency Workshop SNO Deployment Summary
           ==========================================
-          
+
           GUID: {{ guid }}
           Student: {{ student_name }}
           Deployment Mode: {{ 'RHPDS (with RHACM)' if (auto_import_to_rhacm | default(false)) else 'Standalone' }}
-          
+
           OpenShift Details:
             Version: {{ ocp_version }}
             API URL: https://api.{{ guid }}{{ subdomain_base_suffix }}:6443
             Console: https://console-openshift-console.apps.{{ guid }}{{ subdomain_base_suffix }}
             Kubeconfig: {{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig
-          
+
+          {% if workshop_user_password is defined %}
+          Workshop User Credentials:
+            Username: {{ student_name }}
+            Password: <provided-by-admin>
+            Login Command: oc login https://api.{{ guid }}{{ subdomain_base_suffix }}:6443 -u {{ student_name }} -p <password>
+            Permissions: cluster-admin
+          {% endif %}
+
           {% if auto_import_to_rhacm | default(false) %}
           RHACM Integration:
             Hub API: {{ rhacm_hub_api }}
             ManagedCluster: workshop-{{ student_name }}
             Verify: oc get managedcluster workshop-{{ student_name }}
           {% endif %}
-          
+
+          Workshop Operators:
+            LVM Storage Operator: {{ 'Deployed' if (deploy_lvm_storage | default(true)) else 'Skipped' }}
+            OpenShift Virtualization: {{ 'Deployed' if (deploy_openshift_virtualization | default(true)) else 'Skipped' }}
+            SR-IOV Network Operator: {{ 'Deployed' if (deploy_sriov_operator | default(true)) else 'Skipped' }}
+            Node Tuning Operator: Built-in (OpenShift 4.11+)
+
           Next Steps:
+          {% if workshop_user_password is defined %}
+            1. Login: oc login https://api.{{ guid }}{{ subdomain_base_suffix }}:6443 -u {{ student_name }} -p <password>
+            2. Verify: oc get nodes
+            3. Check operators: oc get csv -A
+          {% else %}
             1. oc --kubeconfig={{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig get nodes
             2. oc --kubeconfig={{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig get co
+            3. oc --kubeconfig={{ output_dir }}/{{ env_type }}_{{ guid }}_kubeconfig get csv -A
+          {% endif %}
           {% if auto_import_to_rhacm | default(false) %}
-            3. oc get managedcluster workshop-{{ student_name }}
+            4. oc get managedcluster workshop-{{ student_name }}
           {% endif %}
         dest: "{{ output_dir }}/deployment-summary.txt"

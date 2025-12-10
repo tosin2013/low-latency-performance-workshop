@@ -94,3 +94,15 @@ DEPLOYMENT_AUDIT.md
 # Windows
 Thumbs.db
 PULL_SECRET_ROOT_CAUSE.md
+
+# Workshop credentials (sensitive)
+workshop-credentials.yaml
+tum-workspace.sh
+
+# AgnosticD output
+agnosticd-output/
+
+
+# Generated user-specific overlays (created at deployment time)
+gitops/workshop-docs/overlays/user[0-9]*/
+gitops/workshop-docs/overlays/use[0-9]*/
