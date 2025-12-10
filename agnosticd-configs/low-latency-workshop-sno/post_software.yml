@@ -676,15 +676,10 @@
             __workshop_username: "{{ student_name }}"
             __workshop_password: "{{ workshop_user_password }}"
 
-        - name: Generate htpasswd hash using Python passlib
+        - name: Generate htpasswd entry using htpasswd command
           shell: |
-            python3 -c "
-            from passlib.hash import bcrypt
-            password = '{{ __workshop_password }}'
-            hash = bcrypt.using(rounds=12).hash(password)
-            print(hash)
-            "
-          register: __r_password_hash
+            htpasswd -nbB '{{ __workshop_username }}' '{{ __workshop_password }}'
+          register: __r_htpasswd_entry
           changed_when: false
 
         - name: Create htpasswd secret for workshop user
@@ -701,7 +696,7 @@
                 namespace: openshift-config
               type: Opaque
               stringData:
-                htpasswd: "{{ __workshop_username }}:{{ __r_password_hash.stdout }}"
+                htpasswd: "{{ __r_htpasswd_entry.stdout }}"
 
         - name: Configure OAuth with htpasswd identity provider
           kubernetes.core.k8s:
