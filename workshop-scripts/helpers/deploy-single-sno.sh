@@ -181,7 +181,7 @@ ANSIBLE_NAVIGATOR_CMD="ansible-navigator run ansible/main.yml \
   -e ACTION=provision \
   -e guid=workshop-${USER_NAME} \
   -e student_name=${USER_NAME} \
-  -e workshop_user_password=${WORKSHOP_USER_PASSWORD} \
+  -e workshop_user_password=\"${WORKSHOP_USER_PASSWORD}\" \
   -e output_dir=/runner/agnosticd-output/workshop-${USER_NAME} \
   -e email=${USER_NAME}@workshop.example.com"
 
