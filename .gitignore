@@ -106,3 +106,6 @@ agnosticd-output/
 # Generated user-specific overlays (created at deployment time)
 gitops/workshop-docs/overlays/user[0-9]*/
 gitops/workshop-docs/overlays/use[0-9]*/
+
+# MCP server context
+.mcp-server-context.md
