@@ -1,0 +1,73 @@
+#!/bin/bash
+# Pre-commit hook to scan for secrets using gitleaks
+# This prevents commits that contain credentials or sensitive information
+#
+# Installation:
+#   cp .github/hooks/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+
+set -e
+
+echo "🔒 Running gitleaks security scan..."
+
+# Check if gitleaks is installed
+if ! command -v gitleaks &> /dev/null; then
+    echo "⚠️  Warning: gitleaks not found. Installing..."
+    
+    # Try to install gitleaks
+    if command -v brew &> /dev/null; then
+        brew install gitleaks
+    elif [ "$(uname)" == "Linux" ]; then
+        GITLEAKS_VERSION="8.18.1"
+        curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | \
+            tar -xz -C /tmp/
+        
+        # Try to move to user's local bin
+        if mkdir -p ~/.local/bin && mv /tmp/gitleaks ~/.local/bin/; then
+            export PATH="$HOME/.local/bin:$PATH"
+            echo "✅ Installed gitleaks to ~/.local/bin/"
+        else
+            echo "❌ Failed to install gitleaks. Please install manually:"
+            echo "   https://github.com/gitleaks/gitleaks#installing"
+            echo ""
+            echo "⚠️  Proceeding without gitleaks scan (NOT RECOMMENDED)"
+            exit 0
+        fi
+    else
+        echo "❌ Unable to auto-install gitleaks on this platform"
+        echo "Please install manually: https://github.com/gitleaks/gitleaks#installing"
+        echo ""
+        echo "⚠️  Proceeding without gitleaks scan (NOT RECOMMENDED)"
+        exit 0
+    fi
+fi
+
+# Run gitleaks on staged changes
+echo "Scanning staged files for secrets..."
+if gitleaks protect --staged --redact --verbose; then
+    echo "✅ No secrets detected - commit approved!"
+    exit 0
+else
+    echo ""
+    echo "╔═══════════════════════════════════════════════════════════╗"
+    echo "║  ❌ COMMIT BLOCKED - SECRETS DETECTED!                    ║"
+    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Gitleaks found potential secrets in your staged files."
+    echo ""
+    echo "⚠️  WHAT TO DO:"
+    echo ""
+    echo "1. Review the findings above"
+    echo "2. Remove any real credentials from your files"
+    echo "3. Add sensitive files to .gitignore"
+    echo "4. Use example/placeholder credentials in docs"
+    echo ""
+    echo "If this is a false positive, you can:"
+    echo "  • Add a comment: # gitleaks:allow"
+    echo "  • Skip this hook: git commit --no-verify (NOT RECOMMENDED)"
+    echo ""
+    echo "For help, see: docs/deployment/SECURITY_GUIDELINES.md"
+    echo ""
+    exit 1
+fi
+

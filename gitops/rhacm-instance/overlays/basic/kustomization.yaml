@@ -5,7 +5,7 @@ resources:
   - ../../base
 
 patches:
-  - path: multiclusterhub-multiclusterhub.yaml
+  - path: multiclusterhub.yaml
     target:
       kind: MultiClusterHub
       name: multiclusterhub

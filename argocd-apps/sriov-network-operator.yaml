@@ -12,7 +12,8 @@ spec:
     targetRevision: HEAD
     path: gitops/sriov-network-operator/overlays/sno
   destination:
-    server: https://api.cluster-nsfvh.dynamic.redhatworkshops.io:6443
+    # Replace with your SNO cluster API URL
+    server: https://api.workshop-<username>.<subdomain>:6443
     namespace: openshift-sriov-network-operator
   syncPolicy:
     automated:

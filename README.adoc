@@ -88,6 +88,10 @@ low-latency-performance-workshop/
 │   └── sriov-network-operator/      # SR-IOV deployment configs
 ├── docs/                            # Additional documentation
 │   └── adr/                         # Architecture Decision Records
+├── workshop-scripts/                # Deployment automation
+│   ├── provision-workshop.sh       # Main provisioning script
+│   ├── destroy-workshop.sh         # Cleanup script
+│   └── helpers/                    # Helper scripts
 ├── DEVELOPER_GUIDE.md               # Developer and instructor guide
 ├── ENVIRONMENT_CONFIG.md            # Environment configuration reference
 └── README.adoc                      # This file
@@ -118,6 +122,116 @@ low-latency-performance-workshop/
 3. **Test changes** with actual workshop environment
 4. **Submit pull requests** with clear descriptions
 5. **Update documentation** as needed
+
+== Workshop Deployment (Quick Start)
+
+=== Prerequisites
+
+Before deploying, ensure you have:
+
+* Logged into hub cluster: `oc login <hub-api-url>`
+* AWS credentials configured: `~/secrets-ec2.yml`
+* AgnosticD cloned: `~/agnosticd`
+* Pull secret available: `~/pull-secret.json`
+
+=== Common Tasks (Using Makefile)
+
+[cols="2,3"]
+|===
+| Task | Command
+
+| Deploy 1 user (testing)
+| `make provision-single`
+
+| Deploy 5 users
+| `make provision USERS=5`
+
+| Deploy users 6-10 (incremental)
+| `make provision USERS=10 START_USER=6`
+
+| Destroy all resources
+| `make destroy`
+
+| Check available commands
+| `make help`
+
+| List AWS VPCs
+| `make list-vpcs`
+
+| Force cleanup stuck VPC
+| `make cleanup-vpc VPC_ID=vpc-xxx`
+|===
+
+=== After Deployment
+
+[source,bash]
+----
+# Check SNO cluster status
+oc get managedclusters
+
+# Login to user's SNO cluster
+oc login https://api.workshop-user1.<subdomain>:6443 -u user1 -p <password>
+
+# Find deployment outputs
+ls ~/agnosticd-output/workshop-user1/
+----
+
+=== Expected Output (RHPDS Deployment)
+
+After successful deployment via RHPDS, each user will have:
+
+**Per-User Resources:**
+[cols="1,2"]
+|===
+| Resource | Description
+
+| SNO Cluster
+| Single Node OpenShift on AWS (workshop-userX)
+
+| Hub Namespace
+| `workshop-userX` namespace on hub cluster
+
+| Dev Spaces Namespace
+| `userX-devspaces` for IDE workspace
+
+| ManagedCluster
+| RHACM-managed cluster entry
+
+| Workshop User
+| `userX` with cluster-admin on their SNO
+|===
+
+**Output Files (per user):**
+----
+~/agnosticd-output/workshop-userX/
+├── kubeconfig                              # SNO cluster access
+├── ssh_provision_workshop-userX            # SSH private key
+├── ssh_provision_workshop-userX.pub        # SSH public key
+├── low-latency-workshop-sno_..._kubeadmin-password
+├── deployment-summary.txt                  # Deployment details
+└── provision-user-info.yaml                # User connection info
+----
+
+**Installed Operators (on each SNO):**
+
+* OpenShift Virtualization
+* SR-IOV Network Operator
+* Node Tuning Operator (built-in)
+
+**Estimated Deployment Time:**
+
+* Single user: ~45-90 minutes
+* Multiple users (sequential): N users x ~60 minutes
+
+**Personalized Workshop Guide:**
+
+Each user gets a customized documentation site with their specific cluster information pre-filled:
+
+* URL: `https://docs-userX.apps.<hub-cluster-domain>`
+* Contains: SNO API URL, Console URL, Bastion hostname
+* Auto-updated: Rebuilds when repository is updated
+
+For detailed deployment instructions, see link:workshop-scripts/README.md[Workshop Scripts README].
 
 == Support and Community
 

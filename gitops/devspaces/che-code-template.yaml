@@ -1,0 +1,50 @@
+apiVersion: workspace.devfile.io/v1alpha2
+kind: DevWorkspaceTemplate
+metadata:
+  name: che-code
+  namespace: openshift-devspaces
+  annotations:
+    che.eclipse.org/components-update-policy: managed
+    che.eclipse.org/plugin-registry-url: ''
+  labels:
+    che.eclipse.org/default-editor: 'true'
+spec:
+  components:
+    - name: che-code-runtime
+      container:
+        image: quay.io/devspaces/code-rhel8:3.16
+        command:
+          - /checode/entrypoint-volume.sh
+        memoryLimit: 2048Mi
+        memoryRequest: 256Mi
+        cpuLimit: 500m
+        cpuRequest: 30m
+        volumeMounts:
+          - name: checode
+            path: /checode
+        env:
+          - name: CHE_DASHBOARD_URL
+            value: ''
+          - name: OPENVSX_REGISTRY_URL
+            value: ''
+        endpoints:
+          - name: che-code
+            targetPort: 3100
+            exposure: public
+            secure: true
+            protocol: https
+            attributes:
+              type: main
+              discoverable: false
+              urlRewriteSupported: true
+    - name: checode
+      volume:
+        size: 2Gi
+  commands:
+    - id: init-che-code
+      apply:
+        component: che-code-runtime
+  events:
+    preStart:
+      - init-che-code
+

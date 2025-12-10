@@ -1,17 +1,63 @@
 = Module 2: Workshop Setup with RHACM Multi-Cluster Management
 
 [%hardbreaks]
+
+[IMPORTANT]
+====
+*Quick Start: Login to Your SNO Cluster*
+
+For RHPDS deployments, your SNO cluster has a pre-configured user account with cluster-admin permissions:
+
+[cols="1,2"]
+|===
+| API URL | `https://api.workshop-{username}.{subdomain}:6443`
+| Console | `https://console-openshift-console.apps.workshop-{username}.{subdomain}`
+| Username | `{username}` (same as your hub username, e.g., `user1`)
+| Password | Provided by workshop administrator
+|===
+
+*Login to your SNO cluster (replace values for your environment):*
+
+[source,bash,role=execute]
+----
+# Replace <username>, <subdomain>, and <password> with your actual values
+oc login https://api.workshop-<username>.<subdomain>:6443 -u <username> -p <password>
+----
+
+Replace:
+
+* `<username>` with your assigned username (e.g., user1, user2, etc.)
+* `<subdomain>` with your cluster's subdomain (provided by admin, e.g., `abc123.sandbox.opentlc.com`)
+* `<password>` with the password provided by your administrator
+
+TIP: Your workshop administrator will provide the specific subdomain and password for your environment.
+====
+
 == Module Overview
 
-This module sets up the essential workshop infrastructure using Red Hat Advanced Cluster Management (RHACM). You'll learn how to import and manage target clusters where all performance tuning will be safely applied, following enterprise best practices for multi-cluster management.
+This module covers the workshop infrastructure using Red Hat Advanced Cluster Management (RHACM). Your SNO cluster comes **pre-configured** with all required operators, so this module focuses on understanding the architecture and verifying your environment is ready.
+
+[NOTE]
+====
+**Workshop Environment Pre-Configuration**
+
+Your Single Node OpenShift (SNO) cluster has been automatically provisioned with:
+
+* ✅ **OpenShift Virtualization** - Deployed and configured
+* ✅ **SR-IOV Network Operator** - Deployed and configured
+* ✅ **Node Tuning Operator** - Built-in (OpenShift 4.11+)
+* ✅ **RHACM Integration** - Cluster imported to hub
+
+This module teaches you **how** these components were deployed using GitOps, which is valuable knowledge for your own environments.
+====
 
 == Key Learning Objectives
 
 * Understand the workshop architecture and safety approach
-* Learn RHACM cluster management concepts  
-* Import and verify your target cluster in RHACM
-* Set up multi-cluster GitOps workflows (optional)
-* Prepare the foundation for performance testing and tuning
+* Learn RHACM cluster management concepts
+* **Verify** your pre-configured target cluster in RHACM
+* Understand multi-cluster GitOps workflows (reference examples provided)
+* Confirm the foundation for performance testing and tuning
 
 == Workshop Architecture and Safety Approach
 
@@ -69,20 +115,20 @@ Before starting this module, ensure you have:
 * *Policy Enforcement*: Consistent security and compliance across environments
 * *Disaster Recovery*: Application portability between clusters
 
-== Hands-on Exercise: Setting up RHACM-ArgoCD Integration
+== Hands-on Exercise: Verifying Your Pre-Configured Workshop Environment
 
 === Exercise Overview
 
-In this exercise, you will:
+Your SNO cluster has been automatically configured with all required operators. In this exercise, you will:
 
-1. Verify your managed clusters in RHACM
-2. Create a ManagedClusterSet to group your clusters
-3. Set up ArgoCD integration with RHACM
-4. Deploy OpenShift Virtualization to a remote cluster using GitOps
+1. **Verify** your managed cluster is imported in RHACM
+2. **Confirm** the pre-installed operators are running
+3. **Understand** how GitOps deployment works (reference examples)
+4. **Explore** the RHACM-ArgoCD integration architecture
 
-=== Step 1: Verify Managed Clusters
+=== Step 1: Verify Your Managed Cluster in RHACM
 
-First, let's check what clusters are available in your RHACM environment.
+Your SNO cluster has been automatically imported into RHACM. Let's verify.
 
 . Log into the hub cluster using the provided credentials:
 +
@@ -91,7 +137,7 @@ First, let's check what clusters are available in your RHACM environment.
 oc login --token=<hub-cluster-token> --server=<hub-cluster-api>
 ----
 
-. List the managed clusters:
+. List the managed clusters (your SNO should appear as `workshop-<username>`):
 +
 [source,bash,role=execute]
 ----
@@ -102,40 +148,112 @@ You should see output similar to:
 +
 [source,bash]
 ----
-NAME            HUB ACCEPTED   MANAGED CLUSTER URLS                                           JOINED   AVAILABLE   AGE
-cluster-tln8k   true           https://api.cluster-tln8k.dynamic.redhatworkshops.io:6443      True     True        87m
-local-cluster   true           https://api.cluster-w4hmn.w4hmn.sandbox5146.opentlc.com:6443   True     True        4h40m
+NAME                HUB ACCEPTED   MANAGED CLUSTER URLS                                        JOINED   AVAILABLE   AGE
+local-cluster       true           https://api.hub-cluster.sandbox.opentlc.com:6443            True     True        4h40m
+workshop-student1   true           https://api.test-student1.sandbox.opentlc.com:6443          True     True        45m
 ----
 
-. Verify the cluster details:
+. Verify your cluster is AVAILABLE:
 +
 [source,bash,role=execute]
 ----
 oc get managedclusters -o wide
 ----
 
-. Set the target cluster name as an environment variable:
+. Set your cluster name as an environment variable:
 +
 [source,bash,role=execute]
 ----
-export cluster=cluster-tln8k 
+export MANAGED_CLUSTER=workshop-student1  # Replace with your cluster name
 ----
 
-=== Step 2: Using the Provided RHACM-ArgoCD Integration
+=== Step 2: Verify Pre-Installed Operators on Your SNO
 
-The workshop repository includes pre-configured resources for RHACM-ArgoCD integration. Let's use these to quickly set up the multi-cluster environment.
+Your SNO cluster was provisioned with all required operators. Let's verify they're running.
 
-. Navigate to the rhacm-argocd-integration directory:
+. Get your SNO kubeconfig (provided during workshop setup):
++
+[source,bash,role=execute]
+----
+# Your kubeconfig is at: ~/agnosticd-output/<guid>/kubeconfig
+export KUBECONFIG=~/agnosticd-output/test-student1/low-latency-workshop-sno_test-student1_kubeconfig
+----
+
+. Verify OpenShift Virtualization is installed:
++
+[source,bash,role=execute]
+----
+oc get csv -n openshift-cnv
+----
++
+Expected output:
++
+[source,bash]
+----
+NAME                                      DISPLAY                    VERSION   PHASE
+kubevirt-hyperconverged-operator.v4.x.x   OpenShift Virtualization   4.x.x     Succeeded
+----
+
+. Verify SR-IOV Network Operator is installed:
++
+[source,bash,role=execute]
+----
+oc get csv -n openshift-sriov-network-operator
+----
++
+Expected output:
++
+[source,bash]
+----
+NAME                                         DISPLAY                  VERSION   PHASE
+sriov-network-operator.v4.x.x                SR-IOV Network Operator  4.x.x     Succeeded
+----
+
+. Verify the built-in Node Tuning Operator (available in all OpenShift 4.11+ clusters):
++
+[source,bash,role=execute]
+----
+# Check Node Tuning Operator pods
+oc get pods -n openshift-cluster-node-tuning-operator
+
+# Verify Performance Profile CRD is available
+oc get crd performanceprofiles.performance.openshift.io
+----
+
+. Check the HyperConverged instance (OpenShift Virtualization):
++
+[source,bash,role=execute]
+----
+oc get hyperconverged -n openshift-cnv
+----
+
+[NOTE]
+====
+**All operators should show as "Succeeded" or "Running"**
+
+If any operator is not yet ready, wait a few minutes - the provisioning script deploys them automatically and they may still be initializing.
+
+**What was deployed automatically:**
+
+* **OpenShift Virtualization**: Namespace `openshift-cnv`, Subscription, OperatorGroup, HyperConverged instance
+* **SR-IOV Network Operator**: Namespace `openshift-sriov-network-operator`, Subscription, OperatorGroup
+* **Node Tuning Operator**: Built-in to OpenShift (no installation needed)
+====
+
+=== Step 3: Understanding the GitOps Architecture (Reference)
+
+[NOTE]
+====
+**This section is for reference only** - Your workshop environment is already configured. This explains *how* the operators were deployed, which is valuable knowledge for your own environments.
+====
+
+The workshop repository includes pre-configured resources for RHACM-ArgoCD integration.
+
+. Review the rhacm-argocd-integration resources:
 +
 [source,bash,role=execute]
 ----
 cd /home/ec2-user/low-latency-performance-workshop/rhacm-argocd-integration
-----
-
-. Review the available resources:
-+
-[source,bash,role=execute]
-----
 ls -la
 cat README.md
 ----
@@ -143,34 +261,20 @@ cat README.md
 The directory contains:
 +
 * `managedclusterset.yaml` - Groups managed clusters logically
-* `managedclustersetbinding.yaml` - Binds cluster set to openshift-gitops namespace  
+* `managedclustersetbinding.yaml` - Binds cluster set to openshift-gitops namespace
 * `placement.yaml` - Defines cluster selection criteria
 * `gitopscluster.yaml` - Integrates RHACM with ArgoCD
 * `kustomization.yaml` - Kustomize configuration for all resources
 
-. Apply all the integration resources at once:
+. **[Reference]** These resources would be applied with:
 +
-[source,bash,role=execute]
+[source,bash]
 ----
+# Already done during workshop provisioning
 oc apply -k .
 ----
-+
-This creates the complete RHACM-ArgoCD integration with a single command.
 
-. Label your managed clusters to include them in the cluster set:
-+
-[source,bash,role=execute]
-----
-# Replace <cluster-name> with your actual cluster names
-oc get managedclusters --no-headers -o custom-columns=":metadata.name" | while read cluster; do
-  if [ "$cluster" != "local-cluster" ]; then
-    echo "Labeling cluster: $cluster"
-    oc label managedcluster $cluster cluster.open-cluster-management.io/clusterset=all-clusters --overwrite
-  fi
-done
-----
-
-. Verify the integration is working:
+. Check the existing RHACM-ArgoCD integration:
 +
 [source,bash,role=execute]
 ----
@@ -184,156 +288,105 @@ oc get placementdecision -n openshift-gitops
 oc get secrets -n openshift-gitops | grep cluster
 ----
 
-=== Step 3: Deploy Applications Using GitOps
+== Reference: GitOps Deployment with ArgoCD (How Your Environment Was Configured)
 
-Now that the integration is complete, let's deploy the required operators to your target cluster using the provided ArgoCD applications.
+[NOTE]
+====
+**This entire section is reference material** showing how operators were deployed to your SNO cluster. Understanding these patterns is valuable for deploying to your own environments.
 
-. Navigate to the argocd-apps directory:
+**Your workshop SNO was configured using direct Ansible automation** (faster and simpler for workshops), but the GitOps approach shown here is the enterprise pattern for production environments.
+====
+
+=== Understanding the ArgoCD Application Structure
+
+The workshop repository includes ArgoCD applications that could be used to deploy operators via GitOps.
+
+. Review the argocd-apps directory:
 +
 [source,bash,role=execute]
 ----
 cd /home/ec2-user/low-latency-performance-workshop/argocd-apps
-----
-
-. Review the available applications:
-+
-[source,bash,role=execute]
-----
 ls -la
 cat README.md
 ----
 
-. **Update destination server URLs for your cluster**:
+. Examine an ArgoCD Application manifest:
 +
+[source,bash,role=execute]
+----
+cat openshift-virtualization-operator.yaml
+----
++
+Key components of an ArgoCD Application:
++
+* `spec.source.repoURL` - Git repository containing the manifests
+* `spec.source.path` - Path within the repo to the Kustomize overlay
+* `spec.destination.server` - Target cluster API URL
+* `spec.syncPolicy` - Automatic sync with prune and self-heal
+
+=== GitOps Deployment Pattern (Reference)
+
 [IMPORTANT]
 ====
-The ArgoCD application files contain hardcoded destination server URLs that must be updated to match your current cluster's API server URL before deployment.
+**For Your Own Environments:** If you want to use GitOps to deploy operators, you would:
+
+1. Update destination server URLs to match your cluster
+2. Apply the ArgoCD applications to your hub cluster
+3. ArgoCD would then sync the operators to your target clusters
 ====
+
+. **[Reference]** Update destination server URLs for your cluster:
 +
-First, get your cluster's API server URL:
-+
-[source,bash,role=execute]
+[source,bash]
 ----
 # Get your cluster's API server URL
-oc login -u kubeadmin -p <password> https://api.cluster-xxxx.dynamic.redhatworkshops.io:6443
 CLUSTER_API_URL=$(oc whoami --show-server)
-echo "Current cluster API URL: $CLUSTER_API_URL"
-----
-+
-Then update all ArgoCD application files with your cluster's API server URL using `yq`:
-+
-[source,bash,role=execute]
-----
-# Update the destination server in all ArgoCD application files using yq
+
+# Update the destination server in ArgoCD application files using yq
 for file in sriov-network-operator.yaml openshift-virtualization-operator.yaml openshift-virtualization-instance.yaml; do
-  echo "Updating $file..."
   yq eval ".spec.destination.server = \"$CLUSTER_API_URL\"" -i "$file"
 done
-
-# Verify the changes
-echo "Updated server URLs in ArgoCD applications:"
-for file in *.yaml; do
-  if [[ "$file" != "kustomization.yaml" ]]; then
-    echo "$file: $(yq eval '.spec.destination.server' "$file")"
-  fi
-done
 ----
+
+. **[Reference]** Deploy via ArgoCD:
 +
+[source,bash]
+----
+# On the hub cluster where ArgoCD is running
+oc apply -k .
+----
+
 [NOTE]
 ====
-**Why this step is necessary:**
-
-Each ArgoCD application defines a `destination.server` field that specifies where the application should be deployed. The workshop files contain example URLs that need to be updated to match your specific cluster's API server endpoint.
-
-**What the yq command does:**
-- Uses `yq` (YAML processor) to safely update YAML files
-- Sets the `.spec.destination.server` field to your cluster's API URL
-- Maintains proper YAML formatting and structure
-- Processes each ArgoCD application file individually
-
-**Files that will be updated:**
-- `sriov-network-operator.yaml`
-- `openshift-virtualization-operator.yaml`
-- `openshift-virtualization-instance.yaml`
-
-**Why yq is better than sed:**
-- Preserves YAML structure and formatting
-- Handles YAML-specific syntax correctly
-- Safer for complex YAML manipulations
-- More readable and maintainable
-====
-
-. Commit and push the changes to your Git repository:
-+
-[source,bash,role=execute]
-----
-# Add the updated files to git
-git add *.yaml
-
-# Commit the changes
-git commit -m "Update ArgoCD application destination servers for current cluster"
-
-# Push to your repository
-git push origin main
-----
-+
-[NOTE]
-====
-**Important: OpenShift 4.19 Performance Operator Architecture**
-
-The ArgoCD applications have been updated to reflect changes in OpenShift 4.11+ and are optimized for **OpenShift 4.19**:
+**OpenShift 4.19+ Performance Operator Architecture**
 
 * **Node Tuning Operator**: Built-in to OpenShift 4.11+ (no installation required)
 * **Performance Addon Operator**: **DEPRECATED** in 4.11+ (functionality moved to Node Tuning Operator)
-* **SR-IOV Network Operator**: Still requires installation for high-performance networking
-* **OpenShift Virtualization**: Required for Module 5 virtualization scenarios
-
-This means the workshop only needs to install **SR-IOV Network Operator** and **OpenShift Virtualization** via GitOps, while Performance Profiles are managed by the built-in Node Tuning Operator.
+* **SR-IOV Network Operator**: Requires installation for high-performance networking
+* **OpenShift Virtualization**: Requires installation for VM scenarios
 
 For more details, see: https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.19 Low Latency Tuning Documentation^]
 ====
 
-=== Step 4: Return to Hub Cluster
+=== Step 4: Verify Your Environment (Continue Here)
 
-Before deploying the ArgoCD applications, ensure you're logged into the **hub cluster** where ArgoCD is running:
-
-. Log back into the hub cluster:
+Now let's verify your pre-configured environment is ready. Ensure you're on your SNO cluster:
+. Verify your SNO kubeconfig is set:
 +
 [source,bash,role=execute]
 ----
-# Log into the hub cluster (replace with your hub cluster details)
-oc login -u kubeadmin -p <hub-cluster-password> https://api.cluster-xxxx.dynamic.redhatworkshops.io:6443
-----
-
-. Verify you're on the hub cluster and ArgoCD is running:
-+
-[source,bash,role=execute]
-----
-# Check current cluster context
+# Your kubeconfig should be set from Step 2
+echo $KUBECONFIG
 oc whoami --show-server
-
-# Verify ArgoCD is running on the hub cluster
-oc get pods -n openshift-gitops
 ----
-+
-You should see ArgoCD pods running (argocd-server, argocd-application-controller, etc.).
-
-. Verify ArgoCD CRDs are available:
-+
-[source,bash,role=execute]
-----
-oc get crd applications.argoproj.io
-----
-+
-This should return the Application CRD without errors.
 
 === Step 5: Understanding the Performance Operator Architecture
 
-Before deploying, let's understand what components we're working with:
+Your SNO cluster includes these pre-configured components:
 
 [cols="1,3,1"]
 |===
-| Component | Purpose | Installation
+| Component | Purpose | Status
 
 | *Node Tuning Operator*
 | Manages TuneD profiles AND Performance Profiles. Handles CPU isolation, real-time kernels, and system-level tuning. Built-in since OpenShift 4.11+
@@ -341,41 +394,16 @@ Before deploying, let's understand what components we're working with:
 
 | *SR-IOV Network Operator*
 | Provides high-performance networking with direct hardware access for low-latency applications
-| ArgoCD App 📦
+| Pre-installed ✅
 
 | *OpenShift Virtualization*
 | Enables running VMs with performance optimizations for low-latency virtualization scenarios
-| ArgoCD App 📦
+| Pre-installed ✅
 |===
 
-=== Step 6: Deploy the Applications
+=== Step 6: Final Verification
 
-. Deploy all required operators:
-+
-[source,bash,role=execute]
-----
-oc apply -k .
-----
-
-. Monitor the application deployment:
-+
-[source,bash,role=execute]
-----
-# Watch ArgoCD applications
-watch "oc get applications.argoproj.io -n openshift-gitops"
-
-# Check application status
-oc get applications.argoproj.io -n openshift-gitops -o wide
-----
-. Switch back to target cluster:
-+
-[source,bash,role=execute]
-----
-# Log into the target cluster (replace with your target cluster details)
-oc login -u kubeadmin -p <target-cluster-password> https://api.cluster-xxxx.dynamic.redhatworkshops.io:6443
-----
-
-. Verify built-in Node Tuning Operator (OpenShift 4.19):
+. Verify built-in Node Tuning Operator:
 +
 [source,bash,role=execute]
 ----
@@ -385,26 +413,54 @@ oc get tuned -n openshift-cluster-node-tuning-operator
 # Verify Performance Profile CRD is available (managed by NTO)
 oc get crd performanceprofiles.performance.openshift.io
 
-# Check that NTO can manage Performance Profiles
-oc get tuned default -n openshift-cluster-node-tuning-operator -o yaml
+# Check NTO pods are running
+oc get pods -n openshift-cluster-node-tuning-operator
 ----
 
-. Check operator installations on target cluster:
+. Verify pre-installed operators:
 +
 [source,bash,role=execute]
 ----
 # SR-IOV Network Operator
-oc get csv -n openshift-sriov-network-operator 
+oc get csv -n openshift-sriov-network-operator
 
-# OpenShift Virtualization  
-oc get csv -n openshift-cnv 
+# OpenShift Virtualization
+oc get csv -n openshift-cnv
 ----
 
-=== Alternative: Manual Setup (Optional)
+. Check all operator pods are running:
++
+[source,bash,role=execute]
+----
+# All operator namespaces
+oc get pods -n openshift-cnv --field-selector=status.phase=Running | wc -l
+oc get pods -n openshift-sriov-network-operator --field-selector=status.phase=Running | wc -l
+oc get pods -n openshift-cluster-node-tuning-operator --field-selector=status.phase=Running | wc -l
+----
 
-If you prefer to understand each step individually, you can also set up the integration manually:
+[TIP]
+====
+**Expected Results:**
 
-=== Step 2: Create ManagedClusterSet
+* ✅ Node Tuning Operator: TuneD pods running, PerformanceProfile CRD available
+* ✅ SR-IOV Network Operator: CSV in "Succeeded" phase
+* ✅ OpenShift Virtualization: CSV in "Succeeded" phase, HyperConverged instance ready
+
+If any operator is not ready, wait 5-10 minutes for initialization to complete.
+====
+
+== Deep Dive: Manual RHACM-ArgoCD Setup (Reference)
+
+[NOTE]
+====
+**This section is for advanced reference only.** Your workshop environment is already configured. This detailed walkthrough shows how the RHACM-ArgoCD integration was set up, which is useful for:
+
+* Understanding the underlying architecture
+* Setting up your own multi-cluster environments
+* Troubleshooting integration issues
+====
+
+=== Creating a ManagedClusterSet
 
 A ManagedClusterSet groups clusters together for easier management and policy application.
 
@@ -440,9 +496,9 @@ oc label managedcluster local-cluster cluster.open-cluster-management.io/cluster
 oc label managedcluster cluster-tln8k cluster.open-cluster-management.io/clusterset=all-clusters --overwrite
 ----
 
-=== Step 3: Set up ArgoCD Integration
+=== Setting up ArgoCD Integration
 
-Now we'll integrate RHACM with ArgoCD to enable multi-cluster GitOps deployments.
+Integrating RHACM with ArgoCD enables multi-cluster GitOps deployments.
 
 . Create a ManagedClusterSetBinding to bind the cluster set to the openshift-gitops namespace:
 +
@@ -510,9 +566,9 @@ oc get placementdecision -n openshift-gitops
 oc get placementdecision all-clusters-decision-1 -n openshift-gitops -o yaml
 ----
 
-=== Step 4: Deploy OpenShift Virtualization via ArgoCD
+=== Deploying OpenShift Virtualization via ArgoCD (Reference)
 
-Now that RHACM and ArgoCD are integrated, we can deploy OpenShift Virtualization to the remote cluster using GitOps.
+With RHACM and ArgoCD integrated, operators can be deployed to remote clusters using GitOps.
 
 . First, verify that both clusters are available in ArgoCD:
 +
@@ -853,61 +909,62 @@ oc delete project test-connectivity
 
 In this module, you have:
 
-✅ *Set up* RHACM-ArgoCD integration using provided workshop resources +
-✅ *Imported* and verified target clusters in RHACM +
-✅ *Deployed* SR-IOV Network Operator and OpenShift Virtualization using GitOps workflows +
+✅ *Verified* your SNO cluster is imported into RHACM +
+✅ *Confirmed* pre-installed operators (OpenShift Virtualization, SR-IOV) are running +
 ✅ *Verified* built-in Node Tuning Operator for Performance Profile management +
-✅ *Configured* multi-cluster management for safe performance tuning +
-✅ *Prepared* the complete workshop environment for OpenShift 4.19
+✅ *Understood* the GitOps architecture used for operator deployment (reference material) +
+✅ *Prepared* for baseline testing and performance tuning
 
 .*Key Takeaways*
+* Your workshop SNO cluster comes **pre-configured** with all required operators
 * RHACM provides centralized management for multiple OpenShift clusters
-* GitOps integration enables declarative application deployment across clusters
-* **OpenShift 4.19** has mature built-in performance capabilities via Node Tuning Operator
-* The workshop uses a safety-first approach with dedicated target clusters
-* Only SR-IOV and OpenShift Virtualization require installation - performance features are built-in
+* GitOps enables declarative application deployment (shown as reference)
+* **OpenShift 4.19+** has mature built-in performance capabilities via Node Tuning Operator
+* The workshop uses a safety-first approach with dedicated target SNO clusters
 
-.*Workshop Environment Status*
-* ✅ Hub cluster with RHACM and ArgoCD configured
-* ✅ Target cluster imported and managed by RHACM  
+.*Your Pre-Configured Workshop Environment*
+* ✅ SNO cluster imported and managed by RHACM
 * ✅ OpenShift Virtualization operator deployed and configured
 * ✅ SR-IOV Network Operator installed for high-performance networking
-* ✅ Built-in Node Tuning Operator verified for Performance Profile management
-* ✅ Environment ready for baseline testing and performance tuning  
-* ✅ Multi-cluster GitOps workflows operational
+* ✅ Built-in Node Tuning Operator ready for Performance Profile management
+* ✅ Environment ready for baseline testing and performance tuning
 
 .*Next Steps*
 In Module 3, you will establish baseline performance metrics on your target cluster using industry-standard tools like kube-burner. This will provide quantitative measurements that serve as the foundation for measuring improvements in subsequent modules.
-* *Feature Gates*: Enabled features like SR-IOV live migration and non-root containers
-* *Certificate Management*: Automated certificate rotation
-* *Storage*: Uses hostpath-provisioner for SNO environments
 
 == Troubleshooting Common Issues
 
-=== ArgoCD Application Not Syncing
+=== Operator CSV Not Showing "Succeeded"
 
-If applications show "OutOfSync" status:
-
-[source,bash,role=execute]
-----
-# Check application details
-oc describe application openshift-virtualization-operator -n openshift-gitops
-
-# Force sync if needed
-oc patch application openshift-virtualization-operator -n openshift-gitops --type merge -p '{"operation":{"sync":{"syncStrategy":{"hook":{"force":true}}}}}'
-----
-
-=== Cluster Not Available in ArgoCD
-
-If the target cluster doesn't appear in ArgoCD:
+If an operator CSV is still in "Installing" or "Pending" state:
 
 [source,bash,role=execute]
 ----
-# Verify cluster secrets
-oc get secrets -n openshift-gitops | grep cluster-tln8k
+# Check CSV status with more detail
+oc get csv -n openshift-cnv -o yaml | grep -A 10 "phase:"
 
-# Check placement decision
-oc get placementdecision -n openshift-gitops -o yaml
+# Check for pod issues
+oc get pods -n openshift-cnv --field-selector=status.phase!=Running
+
+# Check operator logs
+oc logs -n openshift-cnv deployment/hco-operator --tail=50
+----
+
+=== Cluster Not Showing in RHACM
+
+If your SNO cluster doesn't appear in the managed clusters list:
+
+[source,bash,role=execute]
+----
+# Check ManagedCluster status on hub
+oc get managedclusters
+
+# Check for import issues
+oc describe managedcluster workshop-student1
+
+# Verify klusterlet is running on SNO
+KUBECONFIG=~/agnosticd-output/test-student1/low-latency-workshop-sno_test-student1_kubeconfig \
+  oc get pods -n open-cluster-management-agent
 ----
 
 === OpenShift Virtualization Pods Not Starting
@@ -919,75 +976,67 @@ If virtualization pods fail to start:
 # Check node resources
 oc describe nodes
 
-# Verify operator logs
-oc logs -n openshift-cnv deployment/hco-operator
+# Verify HyperConverged status
+oc get hyperconverged -n openshift-cnv -o yaml | grep -A 20 "conditions:"
 
-# Check HyperConverged status
-oc get hyperconverged -n openshift-cnv -o yaml
+# Check for pod errors
+oc get pods -n openshift-cnv --field-selector=status.phase!=Running
+----
+
+=== SR-IOV Operator Not Ready
+
+If SR-IOV operator is not fully initialized:
+
+[source,bash,role=execute]
+----
+# Check SR-IOV operator status
+oc get csv -n openshift-sriov-network-operator
+
+# Verify config daemon is running
+oc get pods -n openshift-sriov-network-operator
+
+# Check SriovNetworkNodeState (may be empty on virtual/cloud instances)
+oc get sriovnetworknodestates -n openshift-sriov-network-operator
 ----
 
 == Best Practices
 
-=== Multi-Cluster GitOps
+=== For Your Own Environments
 
 * Use ManagedClusterSets to logically group clusters
 * Implement proper RBAC for ArgoCD applications
 * Use placement rules to target specific cluster types
-* Monitor application health across all clusters
-
-=== OpenShift Virtualization Deployment
-
+* Monitor operator health across all clusters
 * Use environment-specific overlays (SNO vs multi-node)
-* Configure appropriate resource limits for your environment
-* Enable monitoring and alerting for virtualization workloads
-* Plan for storage requirements and performance
 
-== Module Summary
-
-In this module, you successfully:
-
-* ✅ Set up RHACM and ArgoCD integration for multi-cluster management
-* ✅ Created ManagedClusterSet and placement resources for cluster grouping
-* ✅ Deployed SR-IOV Network Operator and OpenShift Virtualization via GitOps
-* ✅ Understood the OpenShift 4.11+ performance operator architecture changes
-* ✅ Verified built-in Node Tuning Operator availability for Performance Profiles
-
-Key takeaways:
-
-* *Multi-cluster Management*: RHACM provides centralized management of multiple OpenShift clusters
-* *GitOps Integration*: ArgoCD integration enables declarative application deployment across clusters
-* *Modern Performance Architecture*: OpenShift 4.11+ consolidates performance management into built-in operators
-* *Simplified Deployment*: Fewer operators to install and manage with improved integration
-* *Performance Foundation*: Built-in Node Tuning Operator + SR-IOV provide complete performance stack
-
-*Performance Operator Architecture (OpenShift 4.19):*
+=== Performance Operator Architecture (OpenShift 4.19+)
 
 * **Node Tuning Operator** (Built-in): Manages TuneD profiles AND Performance Profiles
-* **Performance Addon Operator** (Deprecated): Functionality moved to Node Tuning Operator  
-* **SR-IOV Network Operator** (GitOps): High-performance networking capabilities
-* **OpenShift Virtualization** (GitOps): Low-latency virtualization platform
+* **Performance Addon Operator** (Deprecated): Functionality moved to Node Tuning Operator
+* **SR-IOV Network Operator** (Pre-installed): High-performance networking capabilities
+* **OpenShift Virtualization** (Pre-installed): Low-latency virtualization platform
 
 == Knowledge Check
 
 . What is the purpose of a ManagedClusterSet in RHACM?
-. How does the GitOpsCluster resource integrate RHACM with ArgoCD?
 . Why was the Performance Addon Operator deprecated in OpenShift 4.11+?
 . What performance capabilities are now built into the Node Tuning Operator?
-. Which operators still require installation for the workshop in OpenShift 4.19?
+. Which operators come pre-installed on your workshop SNO cluster?
+. How would you verify that OpenShift Virtualization is fully initialized?
 
 == Next Steps
 
 In the next module, you will:
 
 * Use kube-burner to establish baseline performance metrics
-* Measure pod creation latency and cluster response times  
+* Measure pod creation latency and cluster response times
 * Analyze performance data to identify optimization opportunities
 * Create a performance baseline document for comparison
 
-The performance capabilities set up in this module will be essential for subsequent modules:
+The **pre-installed operators** verified in this module will be essential for subsequent modules:
 
 * *Module 4*: Performance Profiles (built-in Node Tuning Operator) for CPU isolation and real-time kernels
-* *Module 5*: SR-IOV networking (SR-IOV Network Operator) for high-performance VM networking  
+* *Module 5*: SR-IOV networking + OpenShift Virtualization for high-performance VM networking
 * *Module 6*: TuneD profiles (built-in Node Tuning Operator) for system-level performance optimization
 
 == Additional Resources
