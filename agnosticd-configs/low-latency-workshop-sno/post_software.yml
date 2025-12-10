@@ -676,11 +676,41 @@
             __workshop_username: "{{ student_name }}"
             __workshop_password: "{{ workshop_user_password }}"
 
+        - name: Check if htpasswd command is available
+          shell: which htpasswd
+          register: __r_htpasswd_check
+          ignore_errors: true
+          changed_when: false
+
         - name: Generate htpasswd entry using htpasswd command
           shell: |
             htpasswd -nbB '{{ __workshop_username }}' '{{ __workshop_password }}'
           register: __r_htpasswd_entry
           changed_when: false
+          when: __r_htpasswd_check.rc == 0
+
+        - name: Generate htpasswd entry using Python (fallback)
+          shell: |
+            python3 -c "
+            import bcrypt
+            import sys
+            username = '{{ __workshop_username }}'
+            password = '{{ __workshop_password }}'
+            # Generate bcrypt hash
+            hash_bytes = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=5))
+            hash_str = hash_bytes.decode()
+            # Convert \$2b\$ to \$2y\$ for OpenShift OAuth compatibility
+            # (Both are cryptographically identical, just different version identifiers)
+            hash_str = hash_str.replace('\$2b\$', '\$2y\$')
+            print(f'{username}:{hash_str}')
+            "
+          register: __r_htpasswd_python
+          changed_when: false
+          when: __r_htpasswd_check.rc != 0
+
+        - name: Set htpasswd entry fact
+          set_fact:
+            __htpasswd_entry: "{{ __r_htpasswd_entry.stdout if __r_htpasswd_check.rc == 0 else __r_htpasswd_python.stdout }}"
 
         - name: Create htpasswd secret for workshop user
           kubernetes.core.k8s:
@@ -696,7 +726,7 @@
                 namespace: openshift-config
               type: Opaque
               stringData:
-                htpasswd: "{{ __r_htpasswd_entry.stdout }}"
+                htpasswd: "{{ __htpasswd_entry }}"
 
         - name: Configure OAuth with htpasswd identity provider
           kubernetes.core.k8s:
