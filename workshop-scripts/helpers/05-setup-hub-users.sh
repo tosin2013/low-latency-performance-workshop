@@ -20,6 +20,9 @@ WORKSHOP_DIR="/home/lab-user/low-latency-performance-workshop"
 AGNOSTICD_DIR=~/agnosticd
 CONFIG_NAME="low-latency-workshop-hub"
 
+# Get workshop password from environment (set by provision-workshop.sh) or use default
+HUB_USER_PASSWORD="${WORKSHOP_PASSWORD:-workshop}"
+
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║     HUB CLUSTER MULTI-USER SETUP                           ║"
 echo "╚════════════════════════════════════════════════════════════╝"
@@ -27,7 +30,7 @@ echo ""
 echo "Configuration:"
 echo "  Users to create: ${NUM_USERS}"
 echo "  Username pattern: ${USER_PREFIX}1 - ${USER_PREFIX}${NUM_USERS}"
-echo "  Password: workshop"
+echo "  Password: ********** (from WORKSHOP_PASSWORD)"
 echo ""
 
 # ============================================
@@ -85,52 +88,162 @@ else
 fi
 
 # ============================================
-# Create htpasswd users
+# Check Existing OAuth/htpasswd Configuration
 # ============================================
 echo ""
-echo "[3/5] Creating htpasswd users..."
+echo "[3/5] Checking existing OAuth configuration..."
 
-HTPASSWD_SECRET="htpasswd-workshop-secret"
-HTPASSWD_FILE=$(mktemp)
+SKIP_HTPASSWD=false
+EXISTING_IDP=$(oc get oauth cluster -o jsonpath='{.spec.identityProviders[*].name}' 2>/dev/null || echo "")
+EXISTING_HTPASSWD_SECRET=$(oc get oauth cluster -o jsonpath='{.spec.identityProviders[?(@.type=="HTPasswd")].htpasswd.fileData.name}' 2>/dev/null || echo "")
 
-# Check if htpasswd command exists
-if ! command -v htpasswd &> /dev/null; then
-    echo "  htpasswd not found, using openssl for password hashing"
-    # Generate htpasswd entries using openssl
-    for i in $(seq 1 ${NUM_USERS}); do
-        PASSWORD_HASH=$(openssl passwd -apr1 "workshop")
-        echo "${USER_PREFIX}${i}:${PASSWORD_HASH}" >> ${HTPASSWD_FILE}
-    done
-    # Add admin user
-    ADMIN_HASH=$(openssl passwd -apr1 "redhat123")
-    echo "admin:${ADMIN_HASH}" >> ${HTPASSWD_FILE}
+if [ -n "${EXISTING_IDP}" ]; then
+    echo "⚠ Existing identity provider(s) found: ${EXISTING_IDP}"
+
+    if [ -n "${EXISTING_HTPASSWD_SECRET}" ]; then
+        echo "  Existing htpasswd secret: ${EXISTING_HTPASSWD_SECRET}"
+
+        # Get existing users
+        EXISTING_USERS=$(oc get secret ${EXISTING_HTPASSWD_SECRET} -n openshift-config -o jsonpath='{.data.htpasswd}' 2>/dev/null | base64 -d | cut -d: -f1 | tr '\n' ' ')
+        echo "  Existing users: ${EXISTING_USERS}"
+
+        # Check if requested users already exist
+        USERS_EXIST=true
+        MISSING_USERS=""
+        for i in $(seq 1 ${NUM_USERS}); do
+            if ! echo "${EXISTING_USERS}" | grep -qw "${USER_PREFIX}${i}"; then
+                USERS_EXIST=false
+                MISSING_USERS="${MISSING_USERS} ${USER_PREFIX}${i}"
+            fi
+        done
+
+        if [ "${USERS_EXIST}" == "true" ]; then
+            echo "✓ All ${NUM_USERS} workshop users already exist in htpasswd"
+            echo ""
+            echo "Options:"
+            echo "  [S]kip - Keep existing OAuth/users (recommended)"
+            echo "  [O]verwrite - Replace with new htpasswd (will change passwords!)"
+            echo "  [A]bort - Exit script"
+            echo ""
+            read -p "Choice [S/o/a]: " -n 1 -r OAUTH_CHOICE
+            echo ""
+
+            case ${OAUTH_CHOICE} in
+                [Oo])
+                    echo "Will overwrite existing htpasswd configuration"
+                    ;;
+                [Aa])
+                    echo "Aborting"
+                    exit 0
+                    ;;
+                *)
+                    echo "Skipping htpasswd setup - keeping existing configuration"
+                    SKIP_HTPASSWD=true
+                    ;;
+            esac
+        else
+            echo "⚠ Missing users:${MISSING_USERS}"
+            echo ""
+            echo "Options:"
+            echo "  [M]erge - Add missing users to existing htpasswd"
+            echo "  [O]verwrite - Replace with new htpasswd (will reset ALL passwords!)"
+            echo "  [S]kip - Keep existing OAuth as-is"
+            echo "  [A]bort - Exit script"
+            echo ""
+            read -p "Choice [M/o/s/a]: " -n 1 -r OAUTH_CHOICE
+            echo ""
+
+            case ${OAUTH_CHOICE} in
+                [Oo])
+                    echo "Will overwrite existing htpasswd configuration"
+                    ;;
+                [Ss])
+                    echo "Skipping htpasswd setup"
+                    SKIP_HTPASSWD=true
+                    ;;
+                [Aa])
+                    echo "Aborting"
+                    exit 0
+                    ;;
+                *)
+                    echo "Will merge missing users with existing htpasswd"
+                    MERGE_HTPASSWD=true
+                    ;;
+            esac
+        fi
+    else
+        echo "  No htpasswd provider configured - will create new one"
+    fi
 else
-    # Generate htpasswd entries
-    for i in $(seq 1 ${NUM_USERS}); do
-        htpasswd -Bbn "${USER_PREFIX}${i}" "workshop" >> ${HTPASSWD_FILE}
-    done
-    # Add admin user
-    htpasswd -Bbn "admin" "redhat123" >> ${HTPASSWD_FILE}
+    echo "✓ No existing identity providers - will create htpasswd"
 fi
 
-echo "  Generated credentials for ${NUM_USERS} users + admin"
+# ============================================
+# Create/Update htpasswd users
+# ============================================
+if [ "${SKIP_HTPASSWD}" != "true" ]; then
+    echo ""
+    echo "Creating htpasswd users..."
 
-# Create/update htpasswd secret (idempotent)
-oc create secret generic ${HTPASSWD_SECRET} \
-    --from-file=htpasswd=${HTPASSWD_FILE} \
-    -n openshift-config \
-    --dry-run=client -o yaml | oc apply -f -
+    HTPASSWD_SECRET="htpasswd-workshop-secret"
+    HTPASSWD_FILE=$(mktemp)
 
-echo "✓ htpasswd secret created/updated"
+    # If merging, start with existing htpasswd content
+    if [ "${MERGE_HTPASSWD}" == "true" ] && [ -n "${EXISTING_HTPASSWD_SECRET}" ]; then
+        echo "  Extracting existing htpasswd entries..."
+        oc get secret ${EXISTING_HTPASSWD_SECRET} -n openshift-config -o jsonpath='{.data.htpasswd}' | base64 -d > ${HTPASSWD_FILE}
+        echo "  Existing entries preserved"
+    fi
 
-# Update OAuth configuration (idempotent)
-echo "  Updating OAuth configuration..."
+    # Check if htpasswd command exists
+    if ! command -v htpasswd &> /dev/null; then
+        echo "  htpasswd not found, using openssl for password hashing"
+        # Generate htpasswd entries using openssl
+        for i in $(seq 1 ${NUM_USERS}); do
+            # Skip if user already exists (merge mode)
+            if [ "${MERGE_HTPASSWD}" == "true" ] && grep -q "^${USER_PREFIX}${i}:" ${HTPASSWD_FILE} 2>/dev/null; then
+                echo "  Skipping ${USER_PREFIX}${i} (already exists)"
+                continue
+            fi
+            PASSWORD_HASH=$(openssl passwd -apr1 "${HUB_USER_PASSWORD}")
+            echo "${USER_PREFIX}${i}:${PASSWORD_HASH}" >> ${HTPASSWD_FILE}
+        done
+        # Add admin user only if not merging or doesn't exist
+        if [ "${MERGE_HTPASSWD}" != "true" ] || ! grep -q "^admin:" ${HTPASSWD_FILE} 2>/dev/null; then
+            ADMIN_HASH=$(openssl passwd -apr1 "redhat123")
+            echo "admin:${ADMIN_HASH}" >> ${HTPASSWD_FILE}
+        fi
+    else
+        # Generate htpasswd entries
+        for i in $(seq 1 ${NUM_USERS}); do
+            # Skip if user already exists (merge mode)
+            if [ "${MERGE_HTPASSWD}" == "true" ] && grep -q "^${USER_PREFIX}${i}:" ${HTPASSWD_FILE} 2>/dev/null; then
+                echo "  Skipping ${USER_PREFIX}${i} (already exists)"
+                continue
+            fi
+            htpasswd -Bbn "${USER_PREFIX}${i}" "${HUB_USER_PASSWORD}" >> ${HTPASSWD_FILE}
+        done
+        # Add admin user only if not merging or doesn't exist
+        if [ "${MERGE_HTPASSWD}" != "true" ] || ! grep -q "^admin:" ${HTPASSWD_FILE} 2>/dev/null; then
+            htpasswd -Bbn "admin" "redhat123" >> ${HTPASSWD_FILE}
+        fi
+    fi
 
-# Check current OAuth config
-CURRENT_IDP=$(oc get oauth cluster -o jsonpath='{.spec.identityProviders}' 2>/dev/null || echo "[]")
+    echo "  Generated credentials for ${NUM_USERS} users"
 
-# Create OAuth patch
-cat > /tmp/oauth-patch.yaml << EOF
+    # Create/update htpasswd secret (idempotent)
+    oc create secret generic ${HTPASSWD_SECRET} \
+        --from-file=htpasswd=${HTPASSWD_FILE} \
+        -n openshift-config \
+        --dry-run=client -o yaml | oc apply -f -
+
+    echo "✓ htpasswd secret created/updated"
+
+    # Update OAuth configuration (idempotent)
+    echo "  Updating OAuth configuration..."
+
+    # Create OAuth patch
+    cat > /tmp/oauth-patch.yaml << EOF
 spec:
   identityProviders:
   - name: workshop-htpasswd
@@ -141,18 +254,21 @@ spec:
         name: ${HTPASSWD_SECRET}
 EOF
 
-# Apply OAuth patch
-oc patch oauth cluster --type=merge --patch-file=/tmp/oauth-patch.yaml
+    # Apply OAuth patch
+    oc patch oauth cluster --type=merge --patch-file=/tmp/oauth-patch.yaml
 
-echo "✓ OAuth configured with htpasswd provider"
+    echo "✓ OAuth configured with htpasswd provider"
 
-# Wait for OAuth pods to restart
-echo "  Waiting for OAuth pods to restart..."
-sleep 10
-oc rollout status deployment/oauth-openshift -n openshift-authentication --timeout=120s 2>/dev/null || true
+    # Wait for OAuth pods to restart
+    echo "  Waiting for OAuth pods to restart..."
+    sleep 10
+    oc rollout status deployment/oauth-openshift -n openshift-authentication --timeout=120s 2>/dev/null || true
 
-# Clean up temp file
-rm -f ${HTPASSWD_FILE} /tmp/oauth-patch.yaml
+    # Clean up temp file
+    rm -f ${HTPASSWD_FILE} /tmp/oauth-patch.yaml
+else
+    echo "✓ Using existing OAuth configuration"
+fi
 
 # ============================================
 # Install Dev Spaces
@@ -380,7 +496,7 @@ echo "Users Created: ${NUM_USERS}"
 echo ""
 echo "User Credentials:"
 for i in $(seq 1 ${NUM_USERS}); do
-    echo "  ${USER_PREFIX}${i} / workshop"
+    echo "  ${USER_PREFIX}${i} / <workshop-password>"
 done
 echo "  admin / redhat123"
 echo ""
@@ -397,7 +513,7 @@ echo "  2. Update Dev Spaces secrets: ./07-setup-user-devspaces.sh ${NUM_USERS}"
 echo "  3. Setup module-02: ./09-setup-module02-rhacm.sh"
 echo ""
 echo "Users can now:"
-echo "  1. Login to OpenShift console with ${USER_PREFIX}N / workshop"
+echo "  1. Login to OpenShift console with ${USER_PREFIX}N / <workshop-password>"
 echo "  2. Access Dev Spaces at https://devspaces.${CLUSTER_DOMAIN}"
 echo "  3. Start the 'low-latency-workshop' workspace"
 echo ""

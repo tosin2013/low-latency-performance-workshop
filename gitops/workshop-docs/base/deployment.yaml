@@ -5,6 +5,9 @@ metadata:
   labels:
     app: workshop-docs
     workshop: low-latency
+  annotations:
+    # Auto-update image when ImageStream changes
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"workshop-docs:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"httpd\")].image"}]'
 spec:
   replicas: 1
   selector:

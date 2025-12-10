@@ -1,17 +1,17 @@
 #!/bin/bash
-# Deploy SNO clusters for multiple workshop students
+# Deploy SNO clusters for multiple workshop users
 #
 # Usage:
-#   ./04-provision-student-clusters.sh [num_students] [batch_size] [start_num]
+#   ./04-provision-user-clusters.sh [num_users] [batch_size] [start_num]
 #
 # Examples:
-#   ./04-provision-student-clusters.sh 30          # Deploy 30 students, batch size 10, starting from student1
-#   ./04-provision-student-clusters.sh 30 5        # Deploy 30 students in batches of 5
-#   ./04-provision-student-clusters.sh 10 5 21     # Deploy students 21-30 in batches of 5
+#   ./04-provision-user-clusters.sh 30          # Deploy 30 users, batch size 10, starting from user1
+#   ./04-provision-user-clusters.sh 30 5        # Deploy 30 users in batches of 5
+#   ./04-provision-user-clusters.sh 10 5 21     # Deploy users 21-30 in batches of 5
 
 set -e
 
-NUM_STUDENTS=${1:-30}
+NUM_USERS=${1:-30}
 BATCH_SIZE=${2:-10}
 START_NUM=${3:-1}
 DEPLOYMENT_MODE="rhpds"
@@ -21,15 +21,15 @@ SECRETS_FILE=~/secrets-ec2.yml
 CONFIG_DIR=${WORKSHOP_DIR}/agnosticd-configs/low-latency-workshop-sno
 
 # Calculated values
-END_NUM=$((START_NUM + NUM_STUDENTS - 1))
-TOTAL_BATCHES=$(( (NUM_STUDENTS + BATCH_SIZE - 1) / BATCH_SIZE ))
+END_NUM=$((START_NUM + NUM_USERS - 1))
+TOTAL_BATCHES=$(( (NUM_USERS + BATCH_SIZE - 1) / BATCH_SIZE ))
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║     MULTI-STUDENT SNO DEPLOYMENT                           ║"
+echo "║     MULTI-USER SNO DEPLOYMENT                              ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Configuration:"
-echo "  Students: ${START_NUM} to ${END_NUM} (${NUM_STUDENTS} total)"
+echo "  Users: ${START_NUM} to ${END_NUM} (${NUM_USERS} total)"
 echo "  Batch size: ${BATCH_SIZE}"
 echo "  Total batches: ${TOTAL_BATCHES}"
 echo "  Mode: ${DEPLOYMENT_MODE}"
@@ -98,7 +98,7 @@ VCPU_QUOTA=$(aws service-quotas get-service-quota \
   --query 'Quota.Value' \
   --output text 2>/dev/null || echo "0")
 
-VCPU_NEEDED=$((NUM_STUDENTS * 18))  # 16 for SNO + 2 for bastion
+VCPU_NEEDED=$((NUM_USERS * 18))  # 16 for SNO + 2 for bastion
 echo "  vCPUs needed: ${VCPU_NEEDED}"
 echo "  vCPUs quota: ${VCPU_QUOTA}"
 
@@ -175,11 +175,11 @@ for batch in $(seq 1 ${TOTAL_BATCHES}); do
     # Start deployments for this batch
     declare -a BATCH_PIDS
     for i in $(seq ${BATCH_START} ${BATCH_END}); do
-        STUDENT_NAME="student${i}"
-        GUID="workshop-${STUDENT_NAME}"
-        LOG_FILE="${LOG_DIR}/provision-${STUDENT_NAME}.log"
+        USER_NAME="user${i}"
+        GUID="workshop-${USER_NAME}"
+        LOG_FILE="${LOG_DIR}/provision-${USER_NAME}.log"
         
-        echo "  → Starting ${STUDENT_NAME} (GUID: ${GUID})"
+        echo "  → Starting ${USER_NAME} (GUID: ${GUID})"
         
         # Run ansible-navigator in background
         (
@@ -198,14 +198,14 @@ for batch in $(seq 1 ${TOTAL_BATCHES}); do
               -e software_to_deploy=openshift4 \
               -e ACTION=provision \
               -e guid=${GUID} \
-              -e student_name=${STUDENT_NAME} \
+              -e student_name=${USER_NAME} \
               -e output_dir=/runner/agnosticd-output/${GUID} \
-              -e email=${STUDENT_NAME}@workshop.example.com \
+              -e email=${USER_NAME}@workshop.example.com \
               -e rhacm_hub_api="${HUB_API_URL}" \
               -e rhacm_hub_kubeconfig="/home/runner/.kube/config" \
               > ${LOG_FILE} 2>&1
             
-            echo $? > ${LOG_DIR}/${STUDENT_NAME}.exitcode
+            echo $? > ${LOG_DIR}/${USER_NAME}.exitcode
         ) &
         
         BATCH_PIDS+=($!)
@@ -232,42 +232,42 @@ for batch in $(seq 1 ${TOTAL_BATCHES}); do
     # Check results for this batch
     echo "  Verifying deployments..."
     for i in $(seq ${BATCH_START} ${BATCH_END}); do
-        STUDENT_NAME="student${i}"
-        GUID="workshop-${STUDENT_NAME}"
-        EXITCODE_FILE="${LOG_DIR}/${STUDENT_NAME}.exitcode"
+        USER_NAME="user${i}"
+        GUID="workshop-${USER_NAME}"
+        EXITCODE_FILE="${LOG_DIR}/${USER_NAME}.exitcode"
         
         if [ -f ${EXITCODE_FILE} ]; then
             EXITCODE=$(cat ${EXITCODE_FILE})
             if [ "${EXITCODE}" == "0" ]; then
                 # Check if kubeconfig exists
                 if [ -f "${OUTPUT_DIR}/${GUID}/kubeconfig" ]; then
-                    echo "    ✓ ${STUDENT_NAME}: SNO deployed"
+                    echo "    ✓ ${USER_NAME}: SNO deployed"
                     
                     # Check RHACM import
-                    if oc get managedcluster workshop-${STUDENT_NAME} &> /dev/null; then
-                        STATUS=$(oc get managedcluster workshop-${STUDENT_NAME} -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
+                    if oc get managedcluster workshop-${USER_NAME} &> /dev/null; then
+                        STATUS=$(oc get managedcluster workshop-${USER_NAME} -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
                         if [ "${STATUS}" == "True" ]; then
                             echo "      ✓ RHACM: Available"
-                            SUCCESSFUL_STUDENTS+=("${STUDENT_NAME}")
+                            SUCCESSFUL_STUDENTS+=("${USER_NAME}")
                         else
                             echo "      ⚠ RHACM: ${STATUS}"
-                            RHACM_FAILED_STUDENTS+=("${STUDENT_NAME}")
+                            RHACM_FAILED_STUDENTS+=("${USER_NAME}")
                         fi
                     else
                         echo "      ⚠ RHACM: Not found"
-                        RHACM_FAILED_STUDENTS+=("${STUDENT_NAME}")
+                        RHACM_FAILED_STUDENTS+=("${USER_NAME}")
                     fi
                 else
-                    echo "    ✗ ${STUDENT_NAME}: Kubeconfig missing"
-                    FAILED_STUDENTS+=("${STUDENT_NAME}")
+                    echo "    ✗ ${USER_NAME}: Kubeconfig missing"
+                    FAILED_STUDENTS+=("${USER_NAME}")
                 fi
             else
-                echo "    ✗ ${STUDENT_NAME}: Deployment failed (exit code: ${EXITCODE})"
-                FAILED_STUDENTS+=("${STUDENT_NAME}")
+                echo "    ✗ ${USER_NAME}: Deployment failed (exit code: ${EXITCODE})"
+                FAILED_STUDENTS+=("${USER_NAME}")
             fi
         else
-            echo "    ✗ ${STUDENT_NAME}: No exit code found"
-            FAILED_STUDENTS+=("${STUDENT_NAME}")
+            echo "    ✗ ${USER_NAME}: No exit code found"
+            FAILED_STUDENTS+=("${USER_NAME}")
         fi
     done
     
@@ -309,7 +309,7 @@ Deployment Details:
   Completed: $(date -d @${END_TIME} '+%Y-%m-%d %H:%M:%S')
   Duration: ${TOTAL_DURATION} minutes
   
-  Students: ${START_NUM} to ${END_NUM} (${NUM_STUDENTS} total)
+  Students: ${START_NUM} to ${END_NUM} (${NUM_USERS} total)
   Batch size: ${BATCH_SIZE}
   Batches: ${TOTAL_BATCHES}
 

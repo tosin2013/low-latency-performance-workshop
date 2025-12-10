@@ -1,11 +1,27 @@
 #!/bin/bash
 # COMPLETE cleanup of SNO deployment including IPI-created infrastructure
+#
+# This script handles:
+# - OpenShift IPI-created infrastructure (VPCs, subnets, security groups, etc.)
+# - Classic ELBs and ELBv2 (NLB/ALB) load balancers
+# - RequesterManaged ENIs (owned by ELB, Lambda, etc.)
+# - Cross-security-group rule revocation before SG deletion
+# - NAT Gateway cleanup and orphaned EIP release
+# - CloudFormation stacks with GUID tag
+# - Route53 DNS records
+# - RHACM ManagedCluster resources
+#
+# Usage: ./99-destroy-sno-complete.sh <student_name> [deployment_mode]
+#   student_name: e.g., "user1" (creates GUID "test-user1")
+#   deployment_mode: "rhpds" (default) or "standalone"
+#
+# Updated: 2025-12-06 - Added Classic ELB, cross-SG rule revocation, improved infra ID detection
 
 set -e
 
-STUDENT_NAME=${1:-student1}
+STUDENT_NAME=${1:-user1}
 DEPLOYMENT_MODE=${2:-rhpds}
-GUID="test-${STUDENT_NAME}"
+GUID="workshop-${STUDENT_NAME}"
 CLUSTER_NAME="workshop-${STUDENT_NAME}"
 AWS_REGION="us-east-2"
 
@@ -96,25 +112,53 @@ fi
 echo ""
 echo "[2/9] Finding SNO cluster infrastructure..."
 
-# Find the cluster infra ID
-INFRA_ID=$(aws ec2 describe-vpcs \
+# Find the cluster infra ID from VPC name
+# IPI creates VPCs with pattern: {cluster-name}-{infra-id}-vpc
+# Example: test-user1-m2gtw-vpc -> infra_id = m2gtw
+VPC_NAME=$(aws ec2 describe-vpcs \
   --region ${AWS_REGION} \
   --filters "Name=tag:guid,Values=${GUID}" \
-  --query 'Vpcs[*].Tags[?Key==`Name`].Value | [0][0]' \
-  --output text 2>/dev/null | grep -oP '.*-\K\w+(?=-vpc)' || echo "")
+  --query 'Vpcs[0].Tags[?Key==`Name`].Value | [0]' \
+  --output text 2>/dev/null || echo "")
+
+INFRA_ID=""
+if [ -n "$VPC_NAME" ] && [ "$VPC_NAME" != "None" ]; then
+    # Extract infra ID from VPC name (pattern: {name}-{infra_id}-vpc)
+    INFRA_ID=$(echo "$VPC_NAME" | grep -oP '.*-\K[a-z0-9]+(?=-vpc$)' || echo "")
+fi
+
+# Also try to find infra ID from kubernetes.io/cluster tags on any resource
+if [ -z "$INFRA_ID" ]; then
+    INFRA_ID=$(aws ec2 describe-vpcs \
+      --region ${AWS_REGION} \
+      --filters "Name=tag:guid,Values=${GUID}" \
+      --query 'Vpcs[0].Tags[?starts_with(Key, `kubernetes.io/cluster/`)].Key | [0]' \
+      --output text 2>/dev/null | sed 's|kubernetes.io/cluster/||' | grep -oP '.*-\K[a-z0-9]+$' || echo "")
+fi
 
 if [ -n "$INFRA_ID" ]; then
     echo "  → Found SNO infra ID: ${INFRA_ID}"
-    
-    # Terminate EC2 instances
+    CLUSTER_TAG="${GUID}-${INFRA_ID}"
+
+    # Terminate EC2 instances - try multiple tag patterns
     echo "  → Terminating SNO cluster EC2 instances..."
     SNO_INSTANCES=$(aws ec2 describe-instances \
       --region ${AWS_REGION} \
-      --filters "Name=tag:kubernetes.io/cluster/${GUID}-${INFRA_ID},Values=owned" \
+      --filters "Name=tag:kubernetes.io/cluster/${CLUSTER_TAG},Values=owned" \
                 "Name=instance-state-name,Values=running,stopped,stopping" \
       --query 'Reservations[*].Instances[*].InstanceId' \
-      --output text)
-    
+      --output text 2>/dev/null || echo "")
+
+    # Also check for sigs.k8s.io/cluster-api-provider-aws/cluster tag
+    if [ -z "$SNO_INSTANCES" ]; then
+        SNO_INSTANCES=$(aws ec2 describe-instances \
+          --region ${AWS_REGION} \
+          --filters "Name=tag:sigs.k8s.io/cluster-api-provider-aws/cluster/${CLUSTER_TAG},Values=owned" \
+                    "Name=instance-state-name,Values=running,stopped,stopping" \
+          --query 'Reservations[*].Instances[*].InstanceId' \
+          --output text 2>/dev/null || echo "")
+    fi
+
     if [ -n "$SNO_INSTANCES" ]; then
         aws ec2 terminate-instances --region ${AWS_REGION} --instance-ids $SNO_INSTANCES
         echo "  ✓ Terminated SNO instances: $SNO_INSTANCES"
@@ -122,22 +166,43 @@ if [ -n "$INFRA_ID" ]; then
         echo "  → No SNO instances found"
     fi
     
-    # Delete load balancers
+    # Delete load balancers (both ELBv2 and Classic ELB)
     echo "  → Deleting load balancers..."
+
+    # ELBv2 (NLB/ALB)
     LBS=$(aws elbv2 describe-load-balancers \
       --region ${AWS_REGION} \
       --query "LoadBalancers[?contains(LoadBalancerName, '${INFRA_ID}')].LoadBalancerArn" \
       --output text 2>/dev/null || echo "")
-    
+
     for LB in $LBS; do
-        echo "    → Deleting LB: $LB"
+        echo "    → Deleting NLB/ALB: $LB"
         aws elbv2 delete-load-balancer --region ${AWS_REGION} --load-balancer-arn "$LB" || true
     done
-    
-    # Wait for LBs to delete
-    if [ -n "$LBS" ]; then
-        echo "  → Waiting 30s for load balancers to delete..."
-        sleep 30
+
+    # Classic ELB - find by VPC ID
+    SNO_VPC=$(aws ec2 describe-vpcs \
+      --region ${AWS_REGION} \
+      --filters "Name=tag:guid,Values=${GUID}" \
+      --query 'Vpcs[0].VpcId' \
+      --output text 2>/dev/null || echo "")
+
+    if [ -n "$SNO_VPC" ] && [ "$SNO_VPC" != "None" ]; then
+        CLASSIC_LBS=$(aws elb describe-load-balancers \
+          --region ${AWS_REGION} \
+          --query "LoadBalancerDescriptions[?VPCId=='${SNO_VPC}'].LoadBalancerName" \
+          --output text 2>/dev/null || echo "")
+
+        for CLB in $CLASSIC_LBS; do
+            echo "    → Deleting Classic ELB: $CLB"
+            aws elb delete-load-balancer --region ${AWS_REGION} --load-balancer-name "$CLB" || true
+        done
+    fi
+
+    # Wait for LBs to delete (ENIs owned by ELB will auto-release)
+    if [ -n "$LBS" ] || [ -n "$CLASSIC_LBS" ]; then
+        echo "  → Waiting 45s for load balancers and ENIs to release..."
+        sleep 45
     fi
     
     # Delete target groups
@@ -300,24 +365,67 @@ VPCS=$(aws ec2 describe-vpcs \
 for VPC in $VPCS; do
     echo "  → Cleaning up VPC: ${VPC}"
     
-    # Delete NAT gateways first (they take time to delete)
+    # Delete Classic ELBs in this VPC first (they block ENI deletion)
+    echo "    [6.0] Classic ELBs..."
+    CLASSIC_LBS=$(aws elb describe-load-balancers \
+      --region ${AWS_REGION} \
+      --query "LoadBalancerDescriptions[?VPCId=='${VPC}'].LoadBalancerName" \
+      --output text 2>/dev/null || echo "")
+
+    for CLB in $CLASSIC_LBS; do
+        echo "      → Deleting Classic ELB: $CLB"
+        aws elb delete-load-balancer --region ${AWS_REGION} --load-balancer-name "$CLB" || true
+    done
+
+    # Delete ELBv2 (NLB/ALB) in this VPC
+    echo "    [6.0b] NLB/ALB Load Balancers..."
+    ELBV2_LBS=$(aws elbv2 describe-load-balancers \
+      --region ${AWS_REGION} \
+      --query "LoadBalancers[?VpcId=='${VPC}'].LoadBalancerArn" \
+      --output text 2>/dev/null || echo "")
+
+    for LB in $ELBV2_LBS; do
+        echo "      → Deleting NLB/ALB: $LB"
+        aws elbv2 delete-load-balancer --region ${AWS_REGION} --load-balancer-arn "$LB" || true
+    done
+
+    # Wait for LBs to delete (ENIs owned by ELB will auto-release)
+    if [ -n "$CLASSIC_LBS" ] || [ -n "$ELBV2_LBS" ]; then
+        echo "      → Waiting 45s for load balancers and ENIs to release..."
+        sleep 45
+    fi
+
+    # Delete NAT gateways (they take time to delete)
     echo "    [6.1] NAT Gateways..."
     NATS=$(aws ec2 describe-nat-gateways \
       --region ${AWS_REGION} \
       --filter "Name=vpc-id,Values=${VPC}" "Name=state,Values=available,pending,deleting" \
       --query 'NatGateways[*].NatGatewayId' \
-      --output text)
-    
+      --output text 2>/dev/null || echo "")
+
     for NAT in $NATS; do
         echo "      → Deleting NAT gateway: $NAT"
         aws ec2 delete-nat-gateway --region ${AWS_REGION} --nat-gateway-id $NAT || true
     done
-    
+
     # Wait for NATs to delete
     if [ -n "$NATS" ]; then
         echo "      → Waiting 60s for NAT gateways to delete..."
         sleep 60
     fi
+
+    # Release orphaned Elastic IPs (from deleted NAT gateways)
+    echo "    [6.1b] Orphaned Elastic IPs..."
+    # Find EIPs that were associated with this VPC's NAT gateways
+    ORPHANED_EIPS=$(aws ec2 describe-addresses \
+      --region ${AWS_REGION} \
+      --query "Addresses[?AssociationId==null && Tags[?Key=='guid' && Value=='${GUID}']].AllocationId" \
+      --output text 2>/dev/null || echo "")
+
+    for EIP in $ORPHANED_EIPS; do
+        echo "      → Releasing EIP: $EIP"
+        aws ec2 release-address --region ${AWS_REGION} --allocation-id $EIP 2>/dev/null || true
+    done
     
     # Delete VPC Endpoints
     echo "    [6.2] VPC Endpoints..."
@@ -333,25 +441,46 @@ for VPC in $VPCS; do
     done
     
     # Delete Network Interfaces (ENIs)
+    # Note: RequesterManaged ENIs (owned by ELB, Lambda, etc.) cannot be directly deleted
+    # They are auto-deleted when the owning service resource is deleted
     echo "    [6.3] Network Interfaces..."
-    ENIS=$(aws ec2 describe-network-interfaces \
+    ENIS_JSON=$(aws ec2 describe-network-interfaces \
+      --region ${AWS_REGION} \
+      --filters "Name=vpc-id,Values=${VPC}" \
+      --output json 2>/dev/null || echo '{"NetworkInterfaces":[]}')
+
+    # Process each ENI
+    echo "$ENIS_JSON" | jq -c '.NetworkInterfaces[]' 2>/dev/null | while read -r ENI_DATA; do
+        ENI_ID=$(echo "$ENI_DATA" | jq -r '.NetworkInterfaceId')
+        REQUESTER_MANAGED=$(echo "$ENI_DATA" | jq -r '.RequesterManaged // false')
+        ATTACHMENT_ID=$(echo "$ENI_DATA" | jq -r '.Attachment.AttachmentId // empty')
+
+        if [ "$REQUESTER_MANAGED" = "true" ]; then
+            echo "      → Skipping RequesterManaged ENI: $ENI_ID (will auto-delete with owning service)"
+            continue
+        fi
+
+        echo "      → Deleting network interface: $ENI_ID"
+        # First try to detach if attached
+        if [ -n "$ATTACHMENT_ID" ] && [ "$ATTACHMENT_ID" != "null" ]; then
+            aws ec2 detach-network-interface --region ${AWS_REGION} --attachment-id "$ATTACHMENT_ID" 2>/dev/null || true
+            sleep 2
+        fi
+        # Then delete
+        aws ec2 delete-network-interface --region ${AWS_REGION} --network-interface-id $ENI_ID 2>/dev/null || true
+    done
+
+    # Check if any RequesterManaged ENIs remain (indicates blocking resources)
+    REMAINING_ENIS=$(aws ec2 describe-network-interfaces \
       --region ${AWS_REGION} \
       --filters "Name=vpc-id,Values=${VPC}" \
       --query 'NetworkInterfaces[*].NetworkInterfaceId' \
       --output text 2>/dev/null || echo "")
-    
-    for ENI in $ENIS; do
-        echo "      → Deleting network interface: $ENI"
-        # First try to detach
-        aws ec2 detach-network-interface --region ${AWS_REGION} --attachment-id \
-          $(aws ec2 describe-network-interfaces --region ${AWS_REGION} \
-            --network-interface-ids $ENI \
-            --query 'NetworkInterfaces[0].Attachment.AttachmentId' \
-            --output text 2>/dev/null) 2>/dev/null || true
-        sleep 2
-        # Then delete
-        aws ec2 delete-network-interface --region ${AWS_REGION} --network-interface-id $ENI 2>/dev/null || true
-    done
+
+    if [ -n "$REMAINING_ENIS" ]; then
+        echo "      ⚠️  Some ENIs remain (likely RequesterManaged). Waiting 30s for auto-cleanup..."
+        sleep 30
+    fi
     
     # Delete Internet Gateways
     echo "    [6.4] Internet Gateways..."
@@ -382,27 +511,61 @@ for VPC in $VPCS; do
         aws ec2 delete-subnet --region ${AWS_REGION} --subnet-id $SUBNET 2>/dev/null || true
     done
     
-    # Delete Security Groups (except default) - with retries
+    # Delete Security Groups (except default) - with cross-SG rule revocation
     echo "    [6.6] Security Groups..."
-    for attempt in {1..3}; do
-        SGS=$(aws ec2 describe-security-groups \
-          --region ${AWS_REGION} \
-          --filters "Name=vpc-id,Values=${VPC}" \
-          --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
-          --output text 2>/dev/null || echo "")
-        
-        if [ -z "$SGS" ]; then
-            echo "      ✓ All security groups deleted"
-            break
-        fi
-        
-        echo "      → Attempt $attempt: Deleting security groups..."
+
+    # First, get all non-default security groups
+    SGS=$(aws ec2 describe-security-groups \
+      --region ${AWS_REGION} \
+      --filters "Name=vpc-id,Values=${VPC}" \
+      --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
+      --output text 2>/dev/null || echo "")
+
+    if [ -n "$SGS" ]; then
+        # Step 1: Revoke all ingress rules that reference other security groups
+        # This is required because SGs with mutual references cannot be deleted
+        echo "      → Revoking cross-SG ingress rules..."
         for SG in $SGS; do
-            aws ec2 delete-security-group --region ${AWS_REGION} --group-id $SG 2>/dev/null || true
+            # Get all ingress rules that reference other SGs
+            RULES=$(aws ec2 describe-security-groups \
+              --region ${AWS_REGION} \
+              --group-ids $SG \
+              --query 'SecurityGroups[0].IpPermissions[?UserIdGroupPairs[0].GroupId!=null]' \
+              --output json 2>/dev/null || echo "[]")
+
+            if [ "$RULES" != "[]" ] && [ -n "$RULES" ]; then
+                echo "$RULES" | jq -c '.[]' 2>/dev/null | while read -r RULE; do
+                    aws ec2 revoke-security-group-ingress \
+                      --region ${AWS_REGION} \
+                      --group-id $SG \
+                      --ip-permissions "$RULE" 2>/dev/null || true
+                done
+            fi
         done
-        
-        [ $attempt -lt 3 ] && sleep 5
-    done
+
+        # Step 2: Now delete the security groups (with retries)
+        for attempt in {1..3}; do
+            SGS=$(aws ec2 describe-security-groups \
+              --region ${AWS_REGION} \
+              --filters "Name=vpc-id,Values=${VPC}" \
+              --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
+              --output text 2>/dev/null || echo "")
+
+            if [ -z "$SGS" ]; then
+                echo "      ✓ All security groups deleted"
+                break
+            fi
+
+            echo "      → Attempt $attempt: Deleting security groups..."
+            for SG in $SGS; do
+                aws ec2 delete-security-group --region ${AWS_REGION} --group-id $SG 2>/dev/null || true
+            done
+
+            [ $attempt -lt 3 ] && sleep 5
+        done
+    else
+        echo "      ✓ No security groups to delete"
+    fi
     
     # Delete Route Tables (except main)
     echo "    [6.7] Route Tables..."

@@ -3,8 +3,8 @@
 
 set -e
 
-STUDENT_NAME=${1:-student1}
-GUID="test-${STUDENT_NAME}"
+STUDENT_NAME=${1:-user1}
+GUID="workshop-${STUDENT_NAME}"
 AWS_REGION="us-east-2"
 # AgnosticD creates keys with format: ssh_provision_${GUID}
 SSH_KEY="${HOME}/agnosticd-output/${GUID}/ssh_provision_${GUID}"

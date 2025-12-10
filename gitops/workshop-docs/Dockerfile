@@ -1,6 +1,7 @@
 # Multi-stage build for personalized workshop documentation
 # Stage 1: Build Antora docs with user-specific variables
-FROM docker.io/antora/antora:latest AS builder
+# Using the same image as GitHub Actions workflow for consistency
+FROM ghcr.io/rhpds/showroom-content:latest AS builder
 
 # Build arguments for user customization
 ARG USER_NAME=user1
@@ -10,9 +11,19 @@ ARG SNO_CONSOLE_URL=https://console-openshift-console.apps.workshop-user1.exampl
 ARG BASTION_HOST=bastion.workshop-user1.example.com
 ARG SUBDOMAIN_SUFFIX=.example.com
 
-# Copy the workshop content
-WORKDIR /antora
+# Switch to root to handle permissions
+USER root
+
+# Copy the workshop content to a writable directory
+WORKDIR /build
 COPY . .
+
+# Initialize git repository (required by Antora for local content sources)
+RUN git init && \
+    git config user.email "build@local" && \
+    git config user.name "Build" && \
+    git add -A && \
+    git commit -m "Build commit"
 
 # Update antora.yml with user-specific values
 RUN sed -i "s|guid:.*|guid: ${SNO_GUID}|g" content/antora.yml && \
@@ -20,19 +31,22 @@ RUN sed -i "s|guid:.*|guid: ${SNO_GUID}|g" content/antora.yml && \
     sed -i "s|cluster_console:.*|cluster_console: ${SNO_CONSOLE_URL}|g" content/antora.yml && \
     sed -i "s|bastion_host:.*|bastion_host: ${BASTION_HOST}|g" content/antora.yml && \
     sed -i "s|student_name:.*|student_name: ${USER_NAME}|g" content/antora.yml && \
-    echo "Building docs for user: ${USER_NAME}, GUID: ${SNO_GUID}"
+    echo "Building docs for user: ${USER_NAME}, GUID: ${SNO_GUID}" && \
+    git add content/antora.yml && \
+    git commit -m "Update with user-specific values" --allow-empty
 
-# Build the Antora site
-RUN antora --stacktrace default-site.yml || \
+# Build the Antora site (same command as GitHub workflow)
+RUN mkdir -p output && \
+    antora --stacktrace --to-dir=output default-site.yml || \
     (echo "Antora build failed, creating placeholder" && \
-     mkdir -p www && \
-     echo "<html><body><h1>Workshop Docs for ${USER_NAME}</h1><p>Build in progress...</p></body></html>" > www/index.html)
+     mkdir -p output && \
+     echo "<html><body><h1>Workshop Docs for ${USER_NAME}</h1><p>Antora build failed. Check build logs.</p></body></html>" > output/index.html)
 
 # Stage 2: Serve with nginx (simpler, no SSL issues)
-FROM registry.access.redhat.com/ubi9/nginx-124:1-18
+FROM image-registry.openshift-image-registry.svc:5000/openshift/nginx:1.22-ubi8
 
-# Copy built docs from builder stage
-COPY --from=builder /antora/www /usr/share/nginx/html/
+# Copy built docs from builder stage  
+COPY --from=builder /build/output /opt/app-root/src/
 
 # Labels
 LABEL io.k8s.display-name="Low-Latency Workshop Docs" \

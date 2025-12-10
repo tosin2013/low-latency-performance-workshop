@@ -3,8 +3,8 @@
 
 set -e
 
-STUDENT_NAME=${1:-student1}
-GUID="test-${STUDENT_NAME}"
+STUDENT_NAME=${1:-user1}
+GUID="workshop-${STUDENT_NAME}"
 AWS_REGION=${2:-us-east-2}
 
 echo "╔═══════════════════════════════════════════════════════════╗"
@@ -108,19 +108,19 @@ ssh -i "$SSH_KEY" \
   ec2-user@${BASTION_IP} << 'EOSSH' || true
 
 echo "Checking installation directory..."
-if [ -d ~/test-student1 ]; then
-  echo "✓ Installation directory exists: ~/test-student1"
+if [ -d ~/workshop-user1 ]; then
+  echo "✓ Installation directory exists: ~/workshop-user1"
   
   echo ""
   echo "Checking for kubeconfig..."
-  if [ -f ~/test-student1/auth/kubeconfig ]; then
+  if [ -f ~/workshop-user1/auth/kubeconfig ]; then
     echo "✓ Kubeconfig found!"
     
-    export KUBECONFIG=~/test-student1/auth/kubeconfig
+    export KUBECONFIG=~/workshop-user1/auth/kubeconfig
     
     echo ""
     echo "Cluster API:"
-    grep server ~/test-student1/auth/kubeconfig | awk '{print $2}' || echo "Could not extract API URL"
+    grep server ~/workshop-user1/auth/kubeconfig | awk '{print $2}' || echo "Could not extract API URL"
     
     echo ""
     echo "Attempting to connect to cluster..."
@@ -144,8 +144,8 @@ if [ -d ~/test-student1 ]; then
   
   echo ""
   echo "Checking install log (last 50 lines)..."
-  if [ -f ~/test-student1/.openshift_install.log ]; then
-    tail -50 ~/test-student1/.openshift_install.log
+  if [ -f ~/workshop-user1/.openshift_install.log ]; then
+    tail -50 ~/workshop-user1/.openshift_install.log
   fi
 else
   echo "✗ Installation directory not found"

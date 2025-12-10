@@ -15,7 +15,7 @@
           workshop: low-latency
           managed-by: agnosticd
 
-- name: Create Dev Spaces OperatorGroup
+- name: Create Dev Spaces OperatorGroup (AllNamespaces mode required)
   kubernetes.core.k8s:
     state: present
     definition:
@@ -24,9 +24,7 @@
       metadata:
         name: devspaces-operator
         namespace: "{{ devspaces_namespace }}"
-      spec:
-        targetNamespaces:
-          - "{{ devspaces_namespace }}"
+      spec: {}  # Empty spec = AllNamespaces mode (required for Dev Spaces)
 
 - name: Create Dev Spaces Subscription
   kubernetes.core.k8s:
@@ -114,7 +112,8 @@
           defaultNamespace:
             autoProvision: true
             template: "<username>-devspaces"
-          defaultEditor: "{{ devspaces_default_ide | default('che-code') }}"
+          # Use external plugin registry URL to avoid local registry issues
+          defaultEditor: "{{ devspaces_default_ide | default('https://eclipse-che.github.io/che-plugin-registry/main/v3/plugins/che-incubator/che-code/latest/devfile.yaml') }}"
           defaultComponents:
             - name: dev-tools
               container:
