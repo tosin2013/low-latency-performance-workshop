@@ -15,8 +15,10 @@ asciidoc:
     openshift_version: 4.19
     kube_burner_version: 1.17+
     guid: my-guid
+    student_name: student1
     ssh_user: ec2-user
     ssh_password: ""
+    bastion_host: bastion.my-guid.dynamic.redhatworkshops.io
     ssh_command: ssh ec2-user@bastion.{guid}.dynamic.redhatworkshops.io
     cluster_api: https://api.cluster-{guid}.dynamic.redhatworkshops.io:6443
     cluster_console: https://console-openshift-console.apps.cluster-{guid}.dynamic.redhatworkshops.io

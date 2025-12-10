@@ -1,0 +1,43 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: workshop-docs
+  labels:
+    app: workshop-docs
+    workshop: low-latency
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: workshop-docs:latest
+  source:
+    type: Binary
+    # Use local files with: oc start-build workshop-docs --from-dir=.
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: gitops/workshop-docs/Dockerfile
+      # Build args are set per-user via patch
+      buildArgs:
+        - name: USER_NAME
+          value: "user1"
+        - name: SNO_GUID
+          value: "workshop-user1"
+        - name: SNO_API_URL
+          value: "https://api.workshop-user1.example.com:6443"
+        - name: SNO_CONSOLE_URL
+          value: "https://console-openshift-console.apps.workshop-user1.example.com"
+        - name: BASTION_HOST
+          value: "bastion.workshop-user1.example.com"
+        - name: SUBDOMAIN_SUFFIX
+          value: ".example.com"
+  triggers: []
+  runPolicy: Serial
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+

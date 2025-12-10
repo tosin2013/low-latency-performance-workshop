@@ -1,0 +1,126 @@
+schemaVersion: 2.2.2
+metadata:
+  name: low-latency-workshop
+  displayName: Low-Latency Performance Workshop
+  description: |
+    Development workspace for the Low-Latency Performance Workshop for OpenShift.
+    Login to your SNO cluster using the credentials provided by your workshop admin.
+  version: 1.0.0
+  tags:
+    - OpenShift
+    - Kubernetes
+    - Performance
+    - Low-Latency
+    - Workshop
+  icon: https://www.redhat.com/favicon.ico
+  language: Shell
+  projectType: workshop
+
+attributes:
+  controller.devfile.io/storage-type: per-user
+  controller.devfile.io/editor-name: che-code
+  .vscode/extensions.json: |
+    {
+      "recommendations": [
+        "redhat.vscode-yaml",
+        "ms-kubernetes-tools.vscode-kubernetes-tools"
+      ]
+    }
+
+# Clone the workshop repository
+projects:
+  - name: workshop
+    git:
+      remotes:
+        origin: https://github.com/tosin2013/low-latency-performance-workshop.git
+      checkoutFrom:
+        revision: feat/deployment-automation
+
+# Components
+components:
+  - name: tools
+    container:
+      image: quay.io/devspaces/udi-rhel8:latest
+      memoryLimit: 4Gi
+      memoryRequest: 1Gi
+      cpuLimit: "2"
+      cpuRequest: 500m
+      mountSources: true
+      sourceMapping: /projects
+      env:
+        - name: KUBECONFIG
+          value: /home/user/.kube/config
+        - name: WORKSHOP_HOME
+          value: /projects/workshop
+        - name: PATH
+          value: /home/user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        - name: TERM
+          value: xterm-256color
+      volumeMounts:
+        - name: workshop-data
+          path: /home/user/workshop-data
+
+  - name: workshop-data
+    volume:
+      size: 2Gi
+
+# Commands
+commands:
+  # Welcome message with user info
+  - id: show-workshop-info
+    exec:
+      label: "Workshop Info"
+      component: tools
+      workingDir: /projects/workshop
+      commandLine: |
+        echo ""
+        echo "╔════════════════════════════════════════════════════════════════════╗"
+        echo "║     LOW-LATENCY PERFORMANCE WORKSHOP                               ║"
+        echo "╚════════════════════════════════════════════════════════════════════╝"
+        echo ""
+        USERNAME="${DEVWORKSPACE_NAMESPACE%-devspaces}"
+        echo "  Username: ${USERNAME}"
+        echo ""
+        echo "  To login to your SNO cluster:"
+        echo "    oc login https://api.workshop-${USERNAME}.<domain>:6443 -u ${USERNAME} -p <password>"
+        echo ""
+        echo "  See module-02 documentation for your specific cluster details."
+        echo ""
+      group:
+        kind: run
+        isDefault: true
+
+  # Install kube-burner (required for performance testing)
+  - id: install-kube-burner
+    exec:
+      label: "Install kube-burner"
+      component: tools
+      workingDir: /home/user
+      commandLine: |
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Installing kube-burner v1.17.5                            ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        if command -v kube-burner &> /dev/null; then
+          echo "✓ kube-burner already installed"
+          kube-burner version
+        else
+          echo "Downloading kube-burner..."
+          mkdir -p ~/.local/bin ~/kube-burner
+          cd ~/kube-burner
+          curl -sL https://github.com/kube-burner/kube-burner/releases/download/v1.17.5/kube-burner-V1.17.5-linux-x86_64.tar.gz -o kube-burner.tar.gz
+          tar -xzf kube-burner.tar.gz
+          chmod +x kube-burner
+          mv kube-burner ~/.local/bin/
+          rm -rf ~/kube-burner
+          echo ""
+          echo "✓ kube-burner installed successfully!"
+          ~/.local/bin/kube-burner version
+        fi
+      group:
+        kind: build
+
+# Install kube-burner on workspace start
+events:
+  postStart:
+    - install-kube-burner

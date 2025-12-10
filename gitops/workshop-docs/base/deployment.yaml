@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workshop-docs
+  labels:
+    app: workshop-docs
+    workshop: low-latency
+  annotations:
+    # Auto-update image when ImageStream changes
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"workshop-docs:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"httpd\")].image"}]'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workshop-docs
+  template:
+    metadata:
+      labels:
+        app: workshop-docs
+        workshop: low-latency
+    spec:
+      containers:
+        - name: httpd
+          # Uses the image built by BuildConfig
+          image: workshop-docs:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /index.html
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /index.html
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+
