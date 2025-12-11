@@ -16,6 +16,8 @@ asciidoc:
     kube_burner_version: 1.17+
     guid: my-guid
     student_name: student1
+    username: user1
+    subdomain: example.sandbox.opentlc.com
     ssh_user: ec2-user
     ssh_password: ""
     bastion_host: bastion.my-guid.dynamic.redhatworkshops.io
