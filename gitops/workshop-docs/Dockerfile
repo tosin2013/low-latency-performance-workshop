@@ -10,6 +10,7 @@ ARG SNO_API_URL=https://api.workshop-user1.example.com:6443
 ARG SNO_CONSOLE_URL=https://console-openshift-console.apps.workshop-user1.example.com
 ARG BASTION_HOST=bastion.workshop-user1.example.com
 ARG SUBDOMAIN_SUFFIX=.example.com
+ARG HUB_APPS_DOMAIN=apps.cluster.example.com
 
 # Switch to root to handle permissions
 USER root
@@ -33,6 +34,8 @@ RUN sed -i "s|guid:.*|guid: ${SNO_GUID}|g" content/antora.yml && \
     sed -i "s|student_name:.*|student_name: ${USER_NAME}|g" content/antora.yml && \
     sed -i "s|username:.*|username: ${USER_NAME}|g" content/antora.yml && \
     sed -i "s|subdomain:.*|subdomain: ${SUBDOMAIN_SUFFIX#.}|g" content/antora.yml && \
+    sed -i "s|devspaces_url:.*|devspaces_url: https://devspaces.${HUB_APPS_DOMAIN}|g" content/antora.yml && \
+    sed -i "s|devspaces_factory:.*|devspaces_factory: https://devspaces.${HUB_APPS_DOMAIN}/dashboard/#/load-factory?url=https://github.com/tosin2013/low-latency-performance-workshop|g" content/antora.yml && \
     echo "Building docs for user: ${USER_NAME}, GUID: ${SNO_GUID}" && \
     git add content/antora.yml && \
     git commit -m "Update with user-specific values" --allow-empty

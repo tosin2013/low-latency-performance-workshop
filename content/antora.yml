@@ -18,6 +18,8 @@ asciidoc:
     student_name: student1
     username: user1
     subdomain: example.sandbox.opentlc.com
+    devspaces_url: https://devspaces.apps.example.sandbox.opentlc.com
+    devspaces_factory: https://devspaces.apps.example.sandbox.opentlc.com/dashboard/#/load-factory?url=https://github.com/tosin2013/low-latency-performance-workshop
     ssh_user: ec2-user
     ssh_password: ""
     bastion_host: bastion.my-guid.dynamic.redhatworkshops.io
