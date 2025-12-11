@@ -33,6 +33,22 @@ Replace:
 TIP: Your workshop administrator will provide the specific subdomain and password for your environment.
 ====
 
+[TIP]
+====
+*Launch Your Development Environment*
+
+Click below to launch your pre-configured Dev Spaces workspace with all tools and credentials:
+
+link:{devspaces_factory}[🚀 *Open in Dev Spaces*,role=button]
+
+Your workspace includes:
+
+* `oc` CLI pre-configured with your SNO kubeconfig
+* SSH keys for bastion access
+* `kube-burner` for performance testing
+* Workshop documentation and scripts
+====
+
 == Module Overview
 
 This module covers the workshop infrastructure using Red Hat Advanced Cluster Management (RHACM). Your SNO cluster comes **pre-configured** with all required operators, so this module focuses on understanding the architecture and verifying your environment is ready.

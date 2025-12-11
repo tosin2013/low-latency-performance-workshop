@@ -21,6 +21,17 @@ This workshop requires:
 * A target cluster that will be imported into RHACM (Single Node OpenShift recommended)
 * Basic understanding of OpenShift and Kubernetes concepts
 
+[TIP]
+====
+*Launch Your Development Environment*
+
+For RHPDS deployments, click below to launch your pre-configured Dev Spaces workspace:
+
+link:{devspaces_factory}[🚀 *Open in Dev Spaces*,role=button]
+
+This will create a workspace with all tools pre-installed and your SNO cluster credentials auto-mounted.
+====
+
 == What is Low-Latency and Why Does it Matter?
 
 .*Definition*
