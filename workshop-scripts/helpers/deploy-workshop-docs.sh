@@ -88,6 +88,8 @@ spec:
           value: "bastion.workshop-${USER}.${SUBDOMAIN_SUFFIX}"
         - name: SUBDOMAIN_SUFFIX
           value: ".${SUBDOMAIN_SUFFIX}"
+        - name: HUB_APPS_DOMAIN
+          value: "${CLUSTER_DOMAIN}"
 EOF
 
     # Generate route patch
