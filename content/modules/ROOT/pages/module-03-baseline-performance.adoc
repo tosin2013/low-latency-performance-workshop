@@ -27,6 +27,20 @@ This module requires:
 **Important**: This module should be executed on your **target cluster** (not the hub cluster), where performance tuning will be applied.
 ====
 
+[TIP]
+====
+*Quick Login to Your SNO Cluster*
+
+If you're using an RHPDS-deployed workshop, login directly to your SNO:
+
+[source,bash,role=execute,subs="attributes"]
+----
+oc login {cluster_api} -u {username} -p <workshop-password>
+----
+
+Replace `<workshop-password>` with the password provided by your administrator.
+====
+
 .*Performance Testing Overview*
 In this hands-on lab, you'll use kube-burner, a Kubernetes performance testing tool specifically designed to stress test OpenShift clusters. We'll focus on measuring pod creation latency, which is a critical metric for applications requiring fast scaling and low startup times.
 
