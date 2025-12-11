@@ -31,6 +31,8 @@ RUN sed -i "s|guid:.*|guid: ${SNO_GUID}|g" content/antora.yml && \
     sed -i "s|cluster_console:.*|cluster_console: ${SNO_CONSOLE_URL}|g" content/antora.yml && \
     sed -i "s|bastion_host:.*|bastion_host: ${BASTION_HOST}|g" content/antora.yml && \
     sed -i "s|student_name:.*|student_name: ${USER_NAME}|g" content/antora.yml && \
+    sed -i "s|username:.*|username: ${USER_NAME}|g" content/antora.yml && \
+    sed -i "s|subdomain:.*|subdomain: ${SUBDOMAIN_SUFFIX#.}|g" content/antora.yml && \
     echo "Building docs for user: ${USER_NAME}, GUID: ${SNO_GUID}" && \
     git add content/antora.yml && \
     git commit -m "Update with user-specific values" --allow-empty

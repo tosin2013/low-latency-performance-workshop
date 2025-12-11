@@ -17,6 +17,7 @@ CLEANUP_VPC_SCRIPT = $(WORKSHOP_SCRIPTS_DIR)/cleanup-vpc.sh
 USERS ?= 5
 START_USER ?= 1
 USER_PREFIX ?= user
+PASSWORD ?=
 
 # Default target
 all: help
@@ -44,6 +45,7 @@ help:
 	@echo "  list-vpcs          - List all VPCs in AWS account"
 	@echo ""
 	@echo "Workshop Variables (use with provision):"
+	@echo "  PASSWORD=xxx       - Workshop password (REQUIRED for provision)"
 	@echo "  USERS=N            - Number of users (default: 5)"
 	@echo "  START_USER=N       - Starting user number (default: 1)"
 	@echo "  USER_PREFIX=name   - Username prefix (default: user)"
@@ -97,19 +99,29 @@ clean-build: clean build
 # Workshop Provisioning Targets
 # ============================================
 
+# Check that password is provided
+check-password:
+ifndef PASSWORD
+	$(error PASSWORD is required. Usage: make provision PASSWORD=YourSecurePassword)
+endif
+ifeq ($(PASSWORD),)
+	$(error PASSWORD cannot be empty. Usage: make provision PASSWORD=YourSecurePassword)
+endif
+
 # Target to provision workshop (sequential, all users)
-provision:
+provision: check-password
 	@echo "Provisioning workshop..."
 	@echo "  Users: $(USERS)"
 	@echo "  Start User: $(START_USER)"
 	@echo "  User Prefix: $(USER_PREFIX)"
+	@echo "  Password: ********** (provided)"
 	@echo ""
-	@$(PROVISION_SCRIPT) $(USERS) $(START_USER) $(USER_PREFIX)
+	@$(PROVISION_SCRIPT) $(PASSWORD) $(USERS) $(START_USER) $(USER_PREFIX)
 
 # Target to provision single user (user1)
-provision-single:
+provision-single: check-password
 	@echo "Provisioning single user ($(USER_PREFIX)1)..."
-	@$(PROVISION_SCRIPT) 1 1 $(USER_PREFIX)
+	@$(PROVISION_SCRIPT) $(PASSWORD) 1 1 $(USER_PREFIX)
 
 # Target to destroy workshop
 destroy:
