@@ -18,7 +18,6 @@ metadata:
 
 attributes:
   controller.devfile.io/storage-type: per-user
-  # Use default editor (che-code DevWorkspaceTemplate with label che.eclipse.org/default-editor=true)
   .vscode/extensions.json: |
     {
       "recommendations": [
@@ -38,6 +37,7 @@ projects:
 
 # Components
 components:
+  # Main development tools container
   - name: tools
     container:
       image: quay.io/devspaces/udi-rhel8:latest
@@ -60,12 +60,66 @@ components:
         - name: workshop-data
           path: /home/user/workshop-data
 
+  # Workshop data volume
   - name: workshop-data
+    volume:
+      size: 2Gi
+
+  # VS Code editor - init container to populate checode volume
+  - name: che-code-injector
+    container:
+      image: quay.io/devspaces/code-rhel8:3.16
+      command:
+        - /entrypoint-init-container.sh
+      memoryLimit: 256Mi
+      memoryRequest: 32Mi
+      cpuLimit: 500m
+      cpuRequest: 30m
+      volumeMounts:
+        - name: checode
+          path: /checode
+
+  # VS Code editor - runtime
+  - name: che-code-runtime
+    container:
+      image: quay.io/devspaces/code-rhel8:3.16
+      command:
+        - /checode/entrypoint-volume.sh
+      memoryLimit: 2048Mi
+      memoryRequest: 256Mi
+      cpuLimit: 500m
+      cpuRequest: 30m
+      volumeMounts:
+        - name: checode
+          path: /checode
+      env:
+        - name: CHE_DASHBOARD_URL
+          value: ""
+        - name: OPENVSX_REGISTRY_URL
+          value: ""
+      endpoints:
+        - name: che-code
+          targetPort: 3100
+          exposure: public
+          secure: true
+          protocol: https
+          attributes:
+            type: main
+            discoverable: false
+            urlRewriteSupported: true
+            
+  # VS Code volume
+  - name: checode
     volume:
       size: 2Gi
 
 # Commands
 commands:
+  # Init che-code (preStart)
+  - id: init-che-code
+    apply:
+      component: che-code-injector
+
   # Welcome message with user info
   - id: show-workshop-info
     exec:
@@ -120,7 +174,9 @@ commands:
       group:
         kind: build
 
-# Install kube-burner on workspace start
+# Events - initialize editor before starting workspace
 events:
+  preStart:
+    - init-che-code
   postStart:
     - install-kube-burner
