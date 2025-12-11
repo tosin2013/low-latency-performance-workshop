@@ -144,33 +144,51 @@ commands:
         kind: run
         isDefault: true
 
-  # Install kube-burner (required for performance testing)
-  - id: install-kube-burner
+  # Install workshop tools (kube-burner, yq)
+  - id: install-workshop-tools
     exec:
-      label: "Install kube-burner"
+      label: "Install Workshop Tools"
       component: tools
       workingDir: /home/user
       commandLine: |
         echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  Installing kube-burner v1.17.5                            ║"
+        echo "║  Installing Workshop Tools                                 ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
+        mkdir -p ~/.local/bin
+        
+        # Install kube-burner v1.17.5
+        echo "[1/2] kube-burner..."
         if command -v kube-burner &> /dev/null; then
-          echo "✓ kube-burner already installed"
-          kube-burner version
+          echo "  ✓ kube-burner already installed"
         else
-          echo "Downloading kube-burner..."
-          mkdir -p ~/.local/bin ~/kube-burner
-          cd ~/kube-burner
-          curl -sL https://github.com/kube-burner/kube-burner/releases/download/v1.17.5/kube-burner-V1.17.5-linux-x86_64.tar.gz -o kube-burner.tar.gz
-          tar -xzf kube-burner.tar.gz
-          chmod +x kube-burner
-          mv kube-burner ~/.local/bin/
-          rm -rf ~/kube-burner
-          echo ""
-          echo "✓ kube-burner installed successfully!"
-          ~/.local/bin/kube-burner version
+          curl -sL https://github.com/kube-burner/kube-burner/releases/download/v1.17.5/kube-burner-V1.17.5-linux-x86_64.tar.gz | tar -xzf - -C ~/.local/bin kube-burner
+          chmod +x ~/.local/bin/kube-burner
+          echo "  ✓ kube-burner installed"
         fi
+        
+        # Install yq v4.40.5
+        echo "[2/2] yq..."
+        if command -v yq &> /dev/null; then
+          echo "  ✓ yq already installed"
+        else
+          curl -sL https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -o ~/.local/bin/yq
+          chmod +x ~/.local/bin/yq
+          echo "  ✓ yq installed"
+        fi
+        
+        echo ""
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Tools Ready                                               ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "  oc:          $(oc version --client 2>/dev/null | head -1)"
+        echo "  kubectl:     $(kubectl version --client 2>/dev/null | head -1)"
+        echo "  kube-burner: $(kube-burner version 2>/dev/null | head -1)"
+        echo "  jq:          $(jq --version 2>/dev/null)"
+        echo "  yq:          $(yq --version 2>/dev/null)"
+        echo "  git:         $(git --version 2>/dev/null)"
+          echo ""
       group:
         kind: build
 
@@ -179,4 +197,4 @@ events:
   preStart:
     - init-che-code
   postStart:
-    - install-kube-burner
+    - install-workshop-tools
