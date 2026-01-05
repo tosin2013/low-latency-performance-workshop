@@ -2,6 +2,14 @@
 # Master orchestration script for complete workshop provisioning
 # Sets up everything needed for a multi-user workshop
 #
+# ⚠️  DEPRECATED: This script uses AgnosticD v1 and references removed agnosticd-configs/
+#     It requires helpers/deploy-single-sno.sh which has been removed.
+#     For standalone deployments, use the new AgnosticD v2 approach:
+#       ./scripts/workshop-setup.sh
+#       ./scripts/deploy-sno.sh student1 sandbox1234
+#
+#     This script is kept for RHPDS/hub-based deployments only and needs migration.
+#
 # Usage:
 #   ./provision-workshop.sh <password> [num_users] [start_user] [user_prefix]
 #
@@ -38,6 +46,20 @@
 #   Example: ./provision-workshop.sh MySecurePass123 10 6  # Add users 6-10
 
 set -e
+
+# Check if required helper script exists (this script uses deprecated v1 approach)
+if [ ! -f "./helpers/deploy-single-sno.sh" ]; then
+    echo "ERROR: This script requires helpers/deploy-single-sno.sh which has been removed."
+    echo ""
+    echo "This script uses the deprecated AgnosticD v1 approach."
+    echo "For standalone deployments, use the new AgnosticD v2 approach:"
+    echo "  ./scripts/workshop-setup.sh"
+    echo "  ./scripts/deploy-sno.sh student1 sandbox1234"
+    echo ""
+    echo "If you need RHPDS/hub-based deployments, the helper scripts need to be"
+    echo "updated to use AgnosticD v2 or restored from git history."
+    exit 1
+fi
 
 # Password is REQUIRED as first argument
 if [ -z "$1" ]; then

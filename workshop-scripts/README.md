@@ -2,6 +2,9 @@
 
 Scripts for deploying and managing the Low-Latency Performance Workshop.
 
+> **Note**: These scripts use AgnosticD v1 and are designed for RHPDS/hub-based deployments. 
+> For standalone deployments, see the new [AgnosticD v2 approach](../docs/WORKSHOP_SETUP.md) using `scripts/workshop-setup.sh` and `scripts/deploy-sno.sh`.
+
 ## Quick Start (Using Makefile)
 
 ```bash
@@ -100,7 +103,7 @@ make cleanup-vpc-force VPC_ID=vpc-xxx  # Force delete (no confirmation)
 
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `helpers/deploy-single-sno.sh` | Deploy single SNO cluster | `./helpers/deploy-single-sno.sh user1 rhpds` |
+| `helpers/deploy-single-sno.sh` | ~~Deploy single SNO cluster~~ | **REMOVED** - Use `scripts/deploy-sno.sh` for v2 |
 | `helpers/07-setup-user-devspaces.sh` | Setup Dev Spaces secrets | `./helpers/07-setup-user-devspaces.sh 1 user 1` |
 | `helpers/deploy-workshop-docs.sh` | Deploy documentation | `./helpers/deploy-workshop-docs.sh 1 user` |
 | `helpers/check-sno-status.sh` | Check SNO health | `./helpers/check-sno-status.sh user1` |

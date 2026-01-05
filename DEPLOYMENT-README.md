@@ -13,8 +13,65 @@ A hands-on workshop for understanding and optimizing low-latency workloads on Op
 
 | Scenario | Command | Time | Purpose |
 |----------|---------|------|---------|
-| [Single User](#single-user-deployment-testing) | `make provision-single` | ~45 min | End-to-end testing |
-| [Multi-User](#multi-user-deployment-workshop) | `make provision USERS=5` | ~2 hrs | Full workshop |
+| [AgnosticD v2 (Recommended)](#agnosticd-v2-deployment) | `./scripts/workshop-setup.sh` | ~5 min setup | Modern, simplified deployment |
+| [Single User (v1/RHPDS)](#single-user-deployment-testing) | `make provision-single` | ~45 min | End-to-end testing with hub |
+| [Multi-User (v1/RHPDS)](#multi-user-deployment-workshop) | `make provision USERS=5` | ~2 hrs | Full workshop with hub |
+
+---
+
+## AgnosticD v2 Deployment (Recommended)
+
+**New simplified deployment using AgnosticD V2 - no hub cluster required!**
+
+### Quick Setup
+
+```bash
+# Run automated setup (checks prerequisites, clones repos, configures environment)
+cd ~/Development/low-latency-performance-workshop
+./scripts/workshop-setup.sh
+```
+
+### Configure Secrets
+
+1. **Edit `~/Development/agnosticd-v2-secrets/secrets.yml`**:
+   - Add OpenShift pull secret from console.redhat.com
+   - Configure Satellite or RHN repositories (for bastion packages)
+
+2. **Create `~/Development/agnosticd-v2-secrets/secrets-sandboxXXX.yml`**:
+   - Add AWS credentials from demo.redhat.com
+   - Replace XXX with your sandbox number
+
+3. **Edit `agnosticd-v2-vars/low-latency-sno-aws.yml`**:
+   - Update `cloud_tags.owner` with your email
+   - Add `host_ssh_authorized_keys` with your GitHub username
+
+### Deploy SNO Cluster
+
+```bash
+# Deploy single SNO cluster
+./scripts/deploy-sno.sh student1 sandbox1234
+
+# Check status
+./scripts/status-sno.sh student1 sandbox1234
+
+# Destroy cluster
+./scripts/destroy-sno.sh student1 sandbox1234
+```
+
+### What Gets Deployed
+
+- **SNO Cluster**: Single Node OpenShift 4.20 on AWS
+- **Bastion**: t3a.medium instance for cluster management
+- **Workloads**: Cert Manager, OpenShift Virtualization, Showroom (workshop docs)
+
+### Access Information
+
+After deployment, check:
+- **Kubeconfig**: `~/Development/agnosticd-v2-output/student1/openshift-cluster_student1_kubeconfig`
+- **Password**: `~/Development/agnosticd-v2-output/student1/openshift-cluster_student1_kubeadmin-password`
+- **User Info**: `~/Development/agnosticd-v2-output/student1/provision-user-info.yaml`
+
+For detailed setup instructions, see [docs/WORKSHOP_SETUP.md](docs/WORKSHOP_SETUP.md).
 
 ---
 
@@ -182,6 +239,11 @@ After successful deployment, each user will have:
 
 **To change instance type**, edit:
 ```yaml
+# AgnosticD v2 (recommended)
+# agnosticd-v2-vars/low-latency-sno-aws.yml
+control_plane_instance_type: m5.metal  # or m5.8xlarge for testing
+
+# AgnosticD v1 (legacy)
 # agnosticd-configs/low-latency-workshop-sno/default_vars_ec2.yml
 sno_instance_type: m5.metal  # or m5.8xlarge for testing
 ```
@@ -256,21 +318,29 @@ After deployment, share with users:
 
 ```
 low-latency-performance-workshop/
-├── Makefile                     # Main entry point for deployment
+├── Makefile                     # Main entry point for v1/RHPDS deployment
 ├── README.adoc                  # Project overview
 ├── devfile.yaml                 # Dev Spaces workspace definition
-├── agnosticd-configs/           # AgnosticD configurations
-│   ├── low-latency-workshop-hub/    # Hub cluster setup
-│   └── low-latency-workshop-sno/    # SNO cluster deployment
+├── agnosticd-v2-vars/            # AgnosticD v2 configurations (NEW)
+│   ├── low-latency-sno-aws.yml      # SNO cluster config
+│   └── README.md                    # Config documentation
+├── scripts/                      # AgnosticD v2 deployment scripts (NEW)
+│   ├── workshop-setup.sh            # Full automated setup
+│   ├── deploy-sno.sh                # Deploy SNO cluster
+│   ├── destroy-sno.sh                # Destroy SNO cluster
+│   └── status-sno.sh                 # Check cluster status
+├── agnosticd-configs/            # AgnosticD v1 configurations (LEGACY)
+│   ├── low-latency-workshop-hub/    # Hub cluster setup (v1)
+│   └── low-latency-workshop-sno/    # SNO cluster deployment (v1)
 ├── content/                     # Antora workshop content
 │   └── modules/ROOT/pages/          # Module documentation
 ├── gitops/                      # GitOps resources
 │   ├── devspaces/                   # Dev Spaces operator + instance
 │   ├── workshop-docs/               # BuildConfig for docs
 │   └── ...
-└── workshop-scripts/            # Deployment automation
-    ├── provision-workshop.sh        # Main provisioning script
-    ├── destroy-workshop.sh          # Cleanup script
+└── workshop-scripts/            # v1/RHPDS deployment automation
+    ├── provision-workshop.sh        # Main provisioning script (v1)
+    ├── destroy-workshop.sh          # Cleanup script (v1)
     ├── setup-prerequisites.sh       # One-time setup
     ├── README.md                    # Detailed script documentation
     └── helpers/                     # Helper scripts
@@ -278,8 +348,7 @@ low-latency-performance-workshop/
         ├── 01-setup-ansible-navigator.sh
         ├── 02-configure-aws-credentials.sh
         ├── 05-setup-hub-users.sh
-        ├── deploy-single-sno.sh
-        └── ...
+        └── ...                      # (deprecated v1 scripts removed - use scripts/deploy-sno.sh for v2)
 ```
 
 ---
@@ -349,9 +418,11 @@ cat /tmp/workshop-provision-*/user1-deployment.log
 
 ## Additional Documentation
 
-- **Detailed script docs**: [workshop-scripts/README.md](workshop-scripts/README.md)
+- **AgnosticD v2 Setup**: [docs/WORKSHOP_SETUP.md](docs/WORKSHOP_SETUP.md) - Complete setup guide for v2
+- **Detailed script docs (v1)**: [workshop-scripts/README.md](workshop-scripts/README.md)
 - **Project overview**: [README.adoc](README.adoc)
-- **AgnosticD reference**: [RedHatGov/agnosticd](https://github.com/redhat-cop/agnosticd)
+- **AgnosticD v2 reference**: [agnosticd/agnosticd-v2](https://github.com/agnosticd/agnosticd-v2)
+- **AgnosticD v1 reference**: [RedHatGov/agnosticd](https://github.com/redhat-cop/agnosticd)
 
 ---
 
