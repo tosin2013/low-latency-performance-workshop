@@ -134,7 +134,7 @@ gitleaks detect --source=. --verbose
 gitleaks protect --staged
 
 # Scan a specific directory
-gitleaks detect --source=workshop-scripts/
+gitleaks detect --source=scripts/
 ```
 
 ---

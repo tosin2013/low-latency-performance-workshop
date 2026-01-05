@@ -124,21 +124,7 @@ The workshop consists of the following modules:
 
 ### Starting Module 02
 
-Module 02 RHACM setup is typically pre-configured. Verify by running:
-
-```bash
-# Check managed clusters
-oc get managedclusters
-
-# Check ArgoCD applications
-oc get applications.argoproj.io -n openshift-gitops
-```
-
-If you need to run the setup manually:
-```bash
-cd /projects/workshop/workshop-scripts
-./09-setup-module02-rhacm.sh
-```
+Module 02 covers OpenShift Virtualization setup and configuration. Follow the workshop documentation for step-by-step instructions.
 
 ## Troubleshooting
 

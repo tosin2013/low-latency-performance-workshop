@@ -19,14 +19,14 @@ For SNO (Single Node OpenShift) provisioning, you need:
    - Access key ID (starts with `AKIA...`)
    - Secret access key (shown only once!)
 
-### Option B: AWS Sandbox from RHPDS
+### Option B: AWS Sandbox from demo.redhat.com
 
-1. Order "AWS Sandbox" from RHPDS catalog
+1. Order "AWS Sandbox" from demo.redhat.com catalog
 2. Receive email with:
    - AWS access key ID
    - AWS secret access key
    - AWS region
-   - Subdomain
+   - Sandbox ID (e.g., sandbox1234)
 
 **Note**: Sandbox credentials have quota limits and expiration dates.
 
@@ -148,8 +148,8 @@ aws_secret_access_key: YOUR_SECRET_ACCESS_KEY
 # AWS Region
 aws_region: us-east-1
 
-# Subdomain (RHPDS standard pattern)
-subdomain_base_suffix: ".dynamic.redhatworkshops.io"
+# Subdomain (demo.redhat.com pattern)
+subdomain_base_suffix: ".sandboxXXX.opentlc.com"
 
 # OpenShift Pull Secret (REQUIRED)
 # Uses Jinja2 lookup to read from file

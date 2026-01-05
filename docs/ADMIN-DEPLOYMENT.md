@@ -1,132 +1,101 @@
 # Administrator Deployment Guide
 
-This guide is for **workshop administrators** setting up the Low-Latency Performance Workshop infrastructure.
-
-> **Note**: Users do NOT run these scripts. Users access the workshop through Dev Spaces and follow the personalized documentation deployed to their namespace.
+This guide is for **workshop administrators** setting up the Low-Latency Performance Workshop infrastructure using AgnosticD v2.
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         HUB CLUSTER                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌───────────────────┐  ┌───────────────────────┐ │
-│  │   RHACM     │  │   Dev Spaces      │  │   User Namespaces     │ │
-│  │ (manages    │  │ (user1-devspaces) │  │ workshop-user1        │ │
-│  │  SNO        │  │ (user2-devspaces) │  │ workshop-user2        │ │
-│  │  clusters)  │  │      ...          │  │       ...             │ │
-│  └─────────────┘  └───────────────────┘  └───────────────────────┘ │
-│                                                      │              │
-│                              ┌───────────────────────┼──────────────┤
-│                              │  Each namespace has:  │              │
-│                              │  - Docs container     │              │
-│                              │  - Kubeconfig secret  │              │
-│                              │  - SSH key secret     │              │
-│                              │  - SNO info ConfigMap │              │
-│                              └───────────────────────┘              │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-          ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-          │ SNO user1   │  │ SNO user2   │  │ SNO userN   │
-          │ (AWS EC2)   │  │ (AWS EC2)   │  │ (AWS EC2)   │
-          └─────────────┘  └─────────────┘  └─────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           AWS (us-east-2)                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                     SNO Cluster (studentX)                        │  │
+│  │                                                                   │  │
+│  │  ┌─────────────┐  ┌──────────────────┐  ┌─────────────────────┐  │  │
+│  │  │   Bastion   │  │   SNO Node       │  │   Showroom          │  │  │
+│  │  │ t3a.medium  │  │   m5.4xlarge     │  │   (Workshop Docs)   │  │  │
+│  │  │             │  │                  │  │                     │  │  │
+│  │  │ - SSH       │  │  Operators:      │  │  - Antora content   │  │  │
+│  │  │ - oc CLI    │  │  - Virt (CNV)    │  │  - User guide       │  │  │
+│  │  │             │  │  - Node Tuning   │  │                     │  │  │
+│  │  └─────────────┘  └──────────────────┘  └─────────────────────┘  │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## What Users See
+## What Users Get
 
-Each user:
-1. Logs into OpenShift console → `userN` / `workshop`
-2. Opens Dev Spaces → https://devspaces.apps.{hub-domain}
-3. Creates workspace from `https://github.com/tosin2013/low-latency-performance-workshop`
-4. Gets auto-mounted:
-   - Kubeconfig for their SNO cluster
-   - SSH key for bastion access
-5. Accesses personalized docs → `https://docs-userN.apps.{hub-domain}`
+Each user gets:
+1. A dedicated SNO cluster on AWS
+2. Bastion host with SSH access
+3. Workshop documentation via Showroom
+4. Pre-installed operators (OpenShift Virtualization, Node Tuning)
 
 ---
 
-## Single User Deployment (Testing)
+## Deployment Steps
 
-### Prerequisites
+### 1. Prerequisites Setup
+
 ```bash
-# On admin workstation (NOT in Dev Spaces)
-cd /home/lab-user/low-latency-performance-workshop/workshop-scripts
+# Clone the workshop repository
+cd ~/Development
+git clone https://github.com/tosin2013/low-latency-performance-workshop.git
+cd low-latency-performance-workshop
 
-# 1. Setup ansible-navigator
-./01-setup-ansible-navigator.sh
-
-# 2. Configure AWS credentials
-./02-configure-aws-credentials.sh
+# Run automated setup
+./scripts/workshop-setup.sh
 ```
 
-### Deploy for 1 User
+### 2. Configure Secrets
+
+Edit `~/Development/agnosticd-v2-secrets/secrets.yml`:
+- Add OpenShift pull secret from console.redhat.com
+- Configure Satellite or RHN repositories
+
+Create `~/Development/agnosticd-v2-secrets/secrets-sandboxXXX.yml`:
+- Add AWS credentials from demo.redhat.com
+- Replace XXX with your sandbox number
+
+Edit `agnosticd-v2-vars/low-latency-sno-aws.yml`:
+- Update `cloud_tags.owner` with your email
+- Add `host_ssh_authorized_keys` with your GitHub username
+
+### 3. Deploy SNO Cluster
+
 ```bash
-# 3. Install RHACM (if needed)
-./00-install-rhacm.sh
-
-# 4. Setup hub cluster (1 user)
-./05-setup-hub-users.sh 1
-
-# 5. Deploy SNO for user1
-./03-test-single-sno.sh user1 rhpds
-
-# 6. Update Dev Spaces secrets with actual SNO credentials
-./07-setup-user-devspaces.sh 1
+# Deploy a cluster for student1
+./scripts/deploy-sno.sh student1 sandbox1234
 ```
 
-### Verify
+### 4. Verify Deployment
+
 ```bash
-# Check managed clusters
-oc get managedclusters
+# Check cluster status
+./scripts/status-sno.sh student1 sandbox1234
 
-# Check docs deployment
-oc get route docs-user1 -n workshop-user1
+# Set kubeconfig
+export KUBECONFIG=~/Development/agnosticd-v2-output/student1/openshift-cluster_student1_kubeconfig
 
-# Check secrets
-oc get secret user1-kubeconfig -n workshop-user1
-```
-
----
-
-## Multi-User Deployment (Workshop)
-
-### Deploy for N Users
-```bash
-# One-command deployment for 5 users
-./08-provision-complete-workshop.sh 5
-
-# Or step by step:
-./00-install-rhacm.sh
-./05-setup-hub-users.sh 5
-./06-provision-user-snos.sh 5 3    # 5 users, 3 parallel
-./07-setup-user-devspaces.sh 5
-```
-
-### Monitor Progress
-```bash
-# Watch SNO deployments
-watch -n 30 'oc get managedclusters'
-
-# Check deployment logs
-tail -f /tmp/sno-provision-*/provision-*.log
+# Verify nodes
+oc get nodes
 ```
 
 ---
 
-## What Gets Deployed Per User
+## Output Files
 
-| Resource | Location | Purpose |
-|----------|----------|---------|
-| htpasswd user | cluster | `userN` / `workshop` login |
-| Namespace | `workshop-userN` | User's workshop resources |
-| Docs Deployment | `workshop-userN` | Personalized Antora docs |
-| Docs Route | `docs-userN.apps.*` | Public URL to docs |
-| Kubeconfig Secret | `workshop-userN` | Auto-mounted to Dev Spaces |
-| SSH Key Secret | `workshop-userN` | Auto-mounted to Dev Spaces |
-| SNO Info ConfigMap | `workshop-userN` | Cluster URLs and info |
-| SNO Cluster | AWS | Managed by RHACM |
+After deployment, find output at:
+
+```
+~/Development/agnosticd-v2-output/studentX/
+├── openshift-cluster_studentX_kubeconfig           # SNO cluster access
+├── openshift-cluster_studentX_kubeadmin-password   # Admin password
+└── provision-user-info.yaml                        # User connection info
+```
 
 ---
 
@@ -136,16 +105,14 @@ After deployment, users receive:
 
 ```
 ═══════════════════════════════════════════════════════════════
-  WORKSHOP ACCESS - userN
+  WORKSHOP ACCESS - studentX
 ═══════════════════════════════════════════════════════════════
   
-  OpenShift Console: https://console-openshift-console.apps.{hub-domain}
-  Username: userN
-  Password: workshop
+  SNO Console: https://console-openshift-console.apps.<cluster-domain>
   
-  Dev Spaces: https://devspaces.apps.{hub-domain}
+  Showroom Docs: https://showroom.<cluster-domain>
   
-  Documentation: https://docs-userN.apps.{hub-domain}
+  Bastion SSH: ssh ec2-user@bastion.<cluster-domain>
   
 ═══════════════════════════════════════════════════════════════
 ```
@@ -154,54 +121,36 @@ After deployment, users receive:
 
 ## Cleanup
 
-### Remove User SNO Clusters
-```bash
-for i in $(seq 1 5); do
-    ./destroy-sno.sh workshop-user${i}
-done
-```
+### Destroy SNO Cluster
 
-### Remove Hub Resources
 ```bash
-# Remove user namespaces
-for i in $(seq 1 5); do
-    oc delete namespace workshop-user${i}
-done
-
-# Remove htpasswd
-oc delete secret htpasswd-workshop-secret -n openshift-config
+./scripts/destroy-sno.sh student1 sandbox1234
 ```
 
 ---
 
 ## Troubleshooting
 
-### SNO not appearing in RHACM
-```bash
-# Check managed cluster status
-oc get managedcluster workshop-user1 -o yaml | grep -A10 status
+### Deployment Fails
 
-# Check klusterlet on SNO
-KUBECONFIG=~/agnosticd-output/workshop-user1/kubeconfig \
-  oc get pods -n open-cluster-management-agent
+```bash
+# Check AgnosticD logs
+ls -la ~/Development/agnosticd-v2-output/student1/
+
+# Verify AWS credentials
+cat ~/Development/agnosticd-v2-secrets/secrets-sandbox1234.yml
 ```
 
-### Docs container not starting
-```bash
-# Check init container logs (builds Antora)
-oc logs -n workshop-user1 deployment/workshop-docs -c build-docs
+### Cluster Not Accessible
 
-# Check main container
-oc logs -n workshop-user1 deployment/workshop-docs
+```bash
+# Check bastion connectivity
+ssh -i ~/.ssh/id_rsa ec2-user@bastion.<cluster-domain>
+
+# Check kubeconfig
+oc --kubeconfig=~/Development/agnosticd-v2-output/student1/openshift-cluster_student1_kubeconfig get nodes
 ```
 
-### Dev Spaces secrets not mounting
-```bash
-# Verify secret labels
-oc get secret user1-kubeconfig -n workshop-user1 -o yaml | grep -A5 labels
+### Operators Not Installing
 
-# Should have:
-#   controller.devfile.io/mount-to-devworkspace: "true"
-#   controller.devfile.io/watch-secret: "true"
-```
-
+Check the workload configuration in `agnosticd-v2-vars/low-latency-sno-aws.yml` and verify that the operators are listed in the workloads section.

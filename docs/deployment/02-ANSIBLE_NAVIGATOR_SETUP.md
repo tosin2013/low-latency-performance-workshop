@@ -162,21 +162,19 @@ ansible-navigator run ansible/main.yml \
 Since you have `~/.ansible-navigator.yaml`, you can simplify commands:
 
 ```bash
-# Configuration file is automatically loaded
-ansible-navigator run ansible/main.yml \
-  -e @ansible/configs/low-latency-workshop-sno/sample_vars/rhpds.yml \
-  -e @~/secrets-ec2.yml \
-  -e guid=test-student1
+# For this workshop, use the provided scripts instead:
+./scripts/deploy-sno.sh student1 sandbox1234
 ```
 
 ### Interactive Mode (for Debugging)
 
 ```bash
-# Use interactive TUI
-ansible-navigator run ansible/main.yml \
+# Use interactive TUI with AgnosticD v2
+cd ~/Development/agnosticd-v2
+ansible-navigator run main.yml \
   --mode interactive \
-  -e @ansible/configs/low-latency-workshop-sno/sample_vars/rhpds.yml \
-  -e @~/secrets-ec2.yml
+  -e @~/Development/low-latency-performance-workshop/agnosticd-v2-vars/low-latency-sno-aws.yml \
+  -e @~/Development/agnosticd-v2-secrets/secrets.yml
 ```
 
 Interactive mode provides:

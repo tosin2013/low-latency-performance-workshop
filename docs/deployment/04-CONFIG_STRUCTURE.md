@@ -1,246 +1,183 @@
-# AgnosticD Config Structure
+# AgnosticD v2 Config Structure
 
 ## Overview
 
-Our `low-latency-workshop-sno` config extends the proven `ocp4-cluster` config to provision Single Node OpenShift clusters with optional RHACM integration.
+Our workshop uses AgnosticD v2 to provision Single Node OpenShift clusters on AWS. The configuration is defined in `agnosticd-v2-vars/low-latency-sno-aws.yml`.
 
 ## Directory Structure
 
 ```
-agnosticd-configs/low-latency-workshop-sno/
-├── README.adoc                    # Configuration documentation
-├── default_vars.yml               # SNO-specific defaults
-├── default_vars_ec2.yml           # AWS-specific settings
-├── env_vars.yml                   # SNO overrides (1 master, 0 workers)
-│
-├── pre_infra.yml                  # Validates and delegates to ocp4-cluster
-├── post_infra.yml                 # Confirms infrastructure ready
-├── pre_software.yml               # Pre-installation tasks
-├── software.yml                   # OpenShift installation (delegates)
-├── post_software.yml              # RHACM integration (our custom!)
-├── destroy_env.yml                # Cleanup (RHACM + infrastructure)
-│
-└── sample_vars/
-    ├── rhpds.yml                 # RHPDS mode (auto-import to RHACM)
-    └── standalone.yml            # Standalone mode (no RHACM)
+low-latency-performance-workshop/
+├── agnosticd-v2-vars/               # Workshop configuration
+│   ├── low-latency-sno-aws.yml      # SNO cluster config
+│   └── README.md                    # Config documentation
+├── scripts/                         # Deployment scripts
+│   ├── workshop-setup.sh            # Full automated setup
+│   ├── deploy-sno.sh                # Deploy SNO cluster
+│   ├── destroy-sno.sh               # Destroy SNO cluster
+│   └── status-sno.sh                # Check cluster status
+
+~/Development/                       # External directories (created by setup)
+├── agnosticd-v2/                    # AgnosticD v2 repository
+├── agnosticd-v2-secrets/            # Secrets files (not in git)
+│   ├── secrets.yml                  # Pull secret, satellite config
+│   └── secrets-sandboxXXX.yml       # AWS credentials per sandbox
+└── agnosticd-v2-output/             # Deployment outputs
+    └── studentX/                    # Per-user output files
 ```
 
-## How It Works
+## Key Configuration File
 
-### Config Extension Pattern
+### agnosticd-v2-vars/low-latency-sno-aws.yml
 
-Our config uses the "include pattern" to leverage `ocp4-cluster`'s proven infrastructure and OpenShift provisioning:
-
-```yaml
-# In pre_infra.yml
-- name: Include ocp4-cluster pre_infra tasks
-  include_tasks: "{{ playbook_dir }}/configs/ocp4-cluster/pre_infra.yml"
-```
-
-This allows us to:
-- ✅ Reuse proven infrastructure provisioning
-- ✅ Reuse proven OpenShift installation
-- ✅ Add our custom RHACM integration layer
-- ✅ Maintain SNO-specific configuration
-
-### Execution Flow
-
-```
-AgnosticD main.yml
-    ↓
-1. pre_infra.yml
-   - Sets SNO variables (master_instance_count=1, worker_instance_count=0)
-   - Validates requirements
-   - Includes ocp4-cluster/pre_infra.yml → Infrastructure provisioning
-    ↓
-2. post_infra.yml
-   - Confirms infrastructure ready
-   - Includes ocp4-cluster/post_infra.yml
-    ↓
-3. pre_software.yml
-   - Pre-installation tasks
-   - Includes ocp4-cluster/pre_software.yml
-    ↓
-4. software.yml
-   - OpenShift installation
-   - Includes ocp4-cluster/software.yml
-    ↓
-5. post_software.yml (OUR CUSTOM!)
-   - Logs into hub cluster
-   - Logs into new SNO cluster
-   - Creates ManagedCluster + auto-import-secret
-   - Waits for cluster join
-   - No delegation - pure custom code
-```
-
-## Key Files Explained
-
-### env_vars.yml
-
-Sets SNO-specific overrides that apply throughout the deployment:
+This is the main configuration file for SNO deployments:
 
 ```yaml
 ---
-# SNO-specific overrides
-master_instance_count: 1
-worker_instance_count: 0
-bastion_instance_count: 0
-master_instance_type: "{{ sno_instance_type | default('m5.4xlarge') }}"
+# Cluster identification
+guid: "{{ _guid }}"
+cloud_tags:
+  guid: "{{ _guid }}"
+  owner: your-email@redhat.com
+
+# Platform
+platform: aws
+region: us-east-2
+
+# OpenShift version
+openshift_release: "4.20"
+
+# Instance sizing
+control_plane_instance_type: m5.4xlarge
+bastion_instance_type: t3a.medium
+
+# Workloads to install
+workloads:
+  - name: ocp4_workload_cert_manager_operator
+  - name: ocp4_workload_openshift_virtualization
+  - name: ocp4_workload_showroom
+    vars:
+      showroom_user: student
 ```
-
-These variables override ocp4-cluster's defaults to create a single-node cluster.
-
-### default_vars.yml
-
-Defines SNO-specific default variables:
-
-```yaml
----
-env_type: low-latency-workshop-sno
-deployment_type: sno
-guid: "workshop-{{ student_name }}"
-ocp_version: "4.20"
-sno_instance_type: m5.4xlarge
-
-# RHACM Integration (RHPDS mode)
-auto_import_to_rhacm: true  # Set by sample_vars
-managedclusterset: "workshop-clusters"
-
-# Workshop-specific
-cluster_labels:
-  workshop: "low-latency"
-  student: "{{ student_name }}"
-  environment: "target"
-```
-
-### post_software.yml (The RHACM Magic!)
-
-Based on AgnosticD's `hybrid-cloud-binder` proven pattern:
-
-```yaml
----
-- name: RHACM Integration (RHPDS Mode)
-  when:
-    - auto_import_to_rhacm | default(false) | bool
-    - rhacm_hub_api is defined
-  block:
-    # 1. Login to hub cluster
-    - kubernetes.core.k8s_auth:
-        host: "{{ rhacm_hub_api }}"
-        kubeconfig: "{{ rhacm_hub_kubeconfig }}"
-    
-    # 2. Login to SNO cluster
-    - kubernetes.core.k8s_auth:
-        host: "{{ sno_api_url }}"
-        kubeconfig: "{{ sno_kubeconfig }}"
-    
-    # 3. Create namespace on hub
-    - kubernetes.core.k8s:
-        state: present
-        kind: Namespace
-        name: "workshop-{{ student_name }}"
-    
-    # 4. Import SNO (ManagedCluster + auto-import-secret + KlusterletAddonConfig)
-    # 5. Wait for cluster to join
-    # 6. Add to ManagedClusterSet
-```
-
-**Key Insight**: The `auto-import-secret` contains the SNO cluster's API token and endpoint. RHACM uses this to automatically install the klusterlet on the SNO - no manual work needed!
-
-## Sample Vars Files
-
-### sample_vars/rhpds.yml (RHPDS Mode)
-
-```yaml
----
-# RHPDS mode - deploys SNO and auto-imports to RHACM
-cloud_provider: ec2
-aws_region: us-east-1
-env_type: low-latency-workshop-sno
-
-# Enable RHACM auto-import
-auto_import_to_rhacm: true
-
-# Hub integration (passed from environment)
-rhacm_hub_api: "{{ lookup('env', 'HUB_API_URL') }}"
-rhacm_hub_kubeconfig: "{{ lookup('env', 'HUB_KUBECONFIG') }}"
-```
-
-### sample_vars/standalone.yml (Standalone Mode)
-
-```yaml
----
-# Standalone mode - deploys SNO without RHACM integration
-cloud_provider: ec2
-aws_region: us-east-1
-env_type: low-latency-workshop-sno
-
-# Disable RHACM auto-import
-auto_import_to_rhacm: false
-```
-
-## Deployment Modes
-
-### RHPDS Mode (Default)
-- **auto_import_to_rhacm: true**
-- Provisions SNO on AWS
-- Logs into hub cluster
-- Creates RHACM resources
-- Auto-imports SNO
-- Result: SNO appears in RHACM as managed cluster
-
-### Standalone Mode
-- **auto_import_to_rhacm: false**
-- Provisions SNO on AWS
-- No hub integration
-- Result: SNO accessible via kubeconfig only
 
 ## Required Variables
 
-### Always Required
-- `guid`: Unique identifier for deployment
-- `student_name`: Student identifier
-- `cloud_provider`: Cloud provider (ec2)
-- `ocp4_pull_secret`: OpenShift pull secret (inline content!)
-- `aws_access_key_id`: AWS access key
-- `aws_secret_access_key`: AWS secret key
+### In secrets.yml
 
-### RHPDS Mode Additional Requirements
-- `rhacm_hub_api`: Hub cluster API URL
-- `rhacm_hub_kubeconfig`: Path to hub kubeconfig
-- `managedclusterset`: ManagedClusterSet name (optional)
+```yaml
+---
+# OpenShift pull secret (required)
+ocp4_pull_secret: '{"auths":{...}}'
+
+# SSH keys (optional - can use GitHub keys)
+host_ssh_authorized_keys:
+  - github:yourusername
+```
+
+### In secrets-sandboxXXX.yml
+
+```yaml
+---
+# AWS credentials for sandbox
+aws_access_key_id: AKIAXXXXXXXXXXXXXXXX
+aws_secret_access_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+## How Deployment Works
+
+### 1. Setup Phase
+
+```bash
+./scripts/workshop-setup.sh
+```
+
+This script:
+- Clones agnosticd-v2 repository
+- Creates secrets directory structure
+- Provides guidance on configuring secrets
+
+### 2. Deploy Phase
+
+```bash
+./scripts/deploy-sno.sh student1 sandbox1234
+```
+
+This script:
+- Reads configuration from agnosticd-v2-vars/
+- Reads secrets from agnosticd-v2-secrets/
+- Calls AgnosticD v2 to provision the cluster
+- Saves output to agnosticd-v2-output/
+
+### 3. What Gets Deployed
+
+- **Bastion**: t3a.medium instance with SSH access
+- **SNO Node**: m5.4xlarge Single Node OpenShift
+- **Workloads**: Cert Manager, OpenShift Virtualization, Showroom
+
+## Customization
+
+### Change Instance Type
+
+Edit `agnosticd-v2-vars/low-latency-sno-aws.yml`:
+
+```yaml
+control_plane_instance_type: m5.8xlarge  # For larger workloads
+```
+
+### Change OpenShift Version
+
+```yaml
+openshift_release: "4.21"  # Or other available version
+```
+
+### Add/Remove Workloads
+
+```yaml
+workloads:
+  - name: ocp4_workload_cert_manager_operator
+  - name: ocp4_workload_openshift_virtualization
+  # Add more workloads here
+```
+
+## Output Files
+
+After deployment, find outputs at:
+
+```
+~/Development/agnosticd-v2-output/studentX/
+├── openshift-cluster_studentX_kubeconfig           # Cluster access
+├── openshift-cluster_studentX_kubeadmin-password   # Admin password
+└── provision-user-info.yaml                        # Connection info
+```
 
 ## Best Practices
 
-1. **Pull Secret**: Always use inline content in secrets file, not file lookups
-2. **Testing**: Use standalone mode first to test SNO provisioning
-3. **RHACM**: Verify hub cluster is healthy before RHPDS mode
-4. **Cleanup**: Use destroy_env.yml to properly clean up (removes from RHACM first)
+1. **Pull Secret**: Always use inline content in secrets file
+2. **Testing**: Test with one cluster before deploying multiple
+3. **Cleanup**: Use destroy-sno.sh to properly clean up resources
+4. **Secrets**: Never commit secrets files to git
 
 ## Troubleshooting
 
-### Config Not Found
+### Deployment Fails
+
 ```bash
-# Ensure config is copied to AgnosticD
-ls ~/agnosticd/ansible/configs/low-latency-workshop-sno/
+# Check logs
+ls -la ~/Development/agnosticd-v2-output/studentX/
+
+# Verify secrets
+cat ~/Development/agnosticd-v2-secrets/secrets.yml
+cat ~/Development/agnosticd-v2-secrets/secrets-sandbox1234.yml
 ```
 
-### Missing Files
-All these files must exist:
-- pre_infra.yml
-- post_infra.yml
-- pre_software.yml ← Often forgotten!
-- software.yml
-- post_software.yml
-- destroy_env.yml
+### Missing Variables
 
-### Pull Secret Issues
-Don't use: `{{ lookup("file", "~/pull-secret.json") }}`  
-Do use: Direct content in secrets file
+Ensure all required variables are set:
+- `_guid` (passed by deploy script)
+- `ocp4_pull_secret` (in secrets.yml)
+- `aws_access_key_id` and `aws_secret_access_key` (in secrets-sandboxXXX.yml)
 
 ## References
 
-- Base Config: `~/agnosticd/ansible/configs/ocp4-cluster/`
-- RHACM Pattern: `~/agnosticd/ansible/configs/hybrid-cloud-binder/`
-- Workshop Scripts: `workshop-scripts/03-test-single-sno.sh`
-
+- AgnosticD v2 Repository: https://github.com/agnosticd/agnosticd-v2
+- Workshop Setup Guide: [../WORKSHOP_SETUP.md](../WORKSHOP_SETUP.md)

@@ -31,7 +31,7 @@ This module requires:
 ====
 *Quick Login to Your SNO Cluster*
 
-If you're using an RHPDS-deployed workshop, login directly to your SNO:
+Login to your SNO cluster:
 
 [source,bash,role=execute,subs="attributes"]
 ----

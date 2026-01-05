@@ -6,7 +6,7 @@
 ====
 *Quick Start: Login to Your SNO Cluster*
 
-For RHPDS deployments, your SNO cluster has a pre-configured user account with cluster-admin permissions:
+Your SNO cluster has a pre-configured user account with cluster-admin permissions:
 
 [cols="1,2"]
 |===
