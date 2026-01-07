@@ -89,7 +89,7 @@ The NVIDIA GPU Operator automates the management of all NVIDIA software componen
 
 | DCGM Exporter
 | Provides GPU metrics to Prometheus for monitoring
-===
+|===
 
 === GPU Workload Types
 
