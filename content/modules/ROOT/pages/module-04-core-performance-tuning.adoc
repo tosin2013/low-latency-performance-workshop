@@ -17,8 +17,8 @@ This module is the heart of the workshop, where you'll apply node-level performa
 
 Before starting this module, ensure you have completed:
 
-* Module 1: Workshop Setup and Multi-Cluster Management
-* Module 2: GitOps Deployment and Operator Installation
+* Module 1: Low-Latency Performance Fundamentals
+* Module 2: Environment Setup and Verification
 * Module 3: Baseline Performance Measurement and Analysis
 * Established baseline performance metrics using kube-burner from Module 3
 

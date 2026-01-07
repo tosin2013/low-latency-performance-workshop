@@ -18,8 +18,8 @@ By the end of this module, you will be able to:
 ====
 This module requires:
 
-* Access to your **target cluster** (managed cluster from Module 2) with cluster-admin privileges
-* The target cluster should be imported into RHACM and accessible via ArgoCD
+* Access to your **SNO cluster** (from Module 2) with cluster-admin privileges
+* The cluster should have operators installed and verified (from Module 2)
 * Terminal access to a bastion host or local machine with `oc` CLI
 * Internet connectivity for downloading kube-burner
 * At least 2 GB of available memory on worker nodes for test workloads
@@ -47,12 +47,12 @@ In this hands-on lab, you'll use kube-burner, a Kubernetes performance testing t
 [[connecting-to-target-cluster]]
 == Connecting to Your Target Cluster
 
-Before beginning performance testing, you must connect to your target cluster that was set up and imported in Module 2.
+Before beginning performance testing, you must connect to your SNO cluster that was set up and verified in Module 2.
 
 .*Prerequisites Check*
 Ensure you completed Module 2 and have:
 
-* A target cluster imported into RHACM
+* A SNO cluster with operators installed and verified
 * SR-IOV Network Operator installed (if applicable)  
 * OpenShift Virtualization installed (if applicable)
 * Built-in Node Tuning Operator verified
@@ -63,8 +63,8 @@ Ensure you completed Module 2 and have:
 +
 [source,bash,role=execute]
 ----
-# If using RHACM, list your managed clusters first
-oc get managedclusters
+# Verify cluster access
+oc get nodes
 
 # Log into your target cluster (replace with your cluster details)
 # Option 1: Using cluster API URL and token
@@ -77,11 +77,11 @@ oc config use-context <target-cluster-context>
 +
 [TIP]
 ====
-If you don't have the login credentials for your target cluster:
+If you don't have cluster access:
 
-1. From RHACM console, navigate to "Infrastructure" → "Clusters"
-2. Find your target cluster and click on it
-3. Use the "Access cluster" or "Launch to cluster" option
+1. SSH to your bastion host (from Module 2)
+2. The kubeconfig is pre-configured on the bastion
+3. Run `oc get nodes` to verify access
 4. Copy the login command from the target cluster's web console
 ====
 
@@ -137,7 +137,7 @@ Low-latency performance is essential for:
 [[verifying-target-cluster]]
 == Verifying Your Target Cluster Configuration
 
-Now that you're connected to your target cluster, let's verify it meets the requirements for performance testing and has the components installed from Module 2.
+Now that you're connected to your SNO cluster, let's verify it meets the requirements for performance testing and has the components installed from Module 2.
 
 . Verify cluster access and basic information:
 +
@@ -610,7 +610,8 @@ These optimizations should significantly improve the latency metrics you've just
 
 Stay connected to your target cluster for the remaining workshop modules. All performance tuning will be applied to this cluster, and you'll run comparison tests here to measure improvements against your baseline metrics.
 
-If you need to switch between hub and target clusters:
-- Hub cluster: For RHACM management and ArgoCD operations
-- Target cluster: For performance testing and tuning implementation
+If you need to verify cluster access:
+- SSH to bastion: `ssh {bastion_ssh_user_name}@{bastion_public_hostname}`
+- Kubeconfig is pre-configured on the bastion
+- Run `oc get nodes` to verify cluster access
 ====

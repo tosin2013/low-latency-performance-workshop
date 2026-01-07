@@ -58,7 +58,7 @@ OpenShift Virtualization enables running virtual machines alongside containers o
 
 === Verifying OpenShift Virtualization Installation
 
-OpenShift Virtualization was deployed in Module 2 via GitOps. Let's verify it's ready for low-latency workloads.
+OpenShift Virtualization was deployed in Module 2. Let's verify it's ready for low-latency workloads.
 
 . Check if OpenShift Virtualization is installed and ready:
 +
@@ -1428,7 +1428,7 @@ SR-IOV is the key technology for achieving container-like network performance in
 
 === Verifying SR-IOV Network Operator
 
-The SR-IOV Network Operator was deployed in Module 2. Let's verify it's ready for VM networking:
+The SR-IOV Network Operator was installed in Module 2. Let's verify it's ready for VM networking:
 
 . Check SR-IOV operator status:
 +
@@ -1916,7 +1916,7 @@ EOF
 +
 [NOTE]
 ====
-This creates an SR-IOV network specifically for VM use. The `resourceName` must match the SR-IOV Network Node Policy configured in Module 2.
+This creates an SR-IOV network specifically for VM use. The `resourceName` must match the SR-IOV Network Node Policy configured in your cluster.
 ====
 
 . Create a high-performance VM with SR-IOV networking:
@@ -2399,7 +2399,7 @@ python3 ~/low-latency-performance-workshop/scripts/module05-network-policy-analy
 
 This module covered low-latency virtualization with OpenShift Virtualization:
 
-* ✅ **Verified OpenShift Virtualization** deployment from Module 2
+* ✅ **Verified OpenShift Virtualization** installation from Module 2
 * ✅ **Configured high-performance VMs** with dedicated CPUs and HugePages
 * ✅ **Measured VMI startup latency** using kube-burner's vmiLatency measurement
 * ✅ **Tested network policy performance** with netpolLatency measurement
@@ -2558,7 +2558,7 @@ oc describe node <node-name> | grep -A 10 "Conditions:"
 === Workshop Progress
 
 * ✅ **Module 1**: Low-latency fundamentals and concepts
-* ✅ **Module 2**: RHACM and GitOps deployment automation
+* ✅ **Module 2**: Environment setup and operator verification
 * ✅ **Module 3**: Baseline performance measurement and analysis
 * ✅ **Module 4**: Performance tuning with CPU isolation (optional but recommended)
 * ✅ **Module 5**: Low-latency virtualization with OpenShift Virtualization (current)

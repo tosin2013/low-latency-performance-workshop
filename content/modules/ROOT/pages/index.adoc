@@ -3,7 +3,7 @@
 [%hardbreaks]
 == Introduction
 
-Welcome to the comprehensive OpenShift Low-Latency Performance Workshop! This hands-on workshop will guide you through implementing high-performance, low-latency workloads on OpenShift 4.19 using enterprise-grade tuning techniques and Red Hat Advanced Cluster Management (RHACM).
+Welcome to the comprehensive OpenShift Low-Latency Performance Workshop! This hands-on workshop will guide you through implementing high-performance, low-latency workloads on OpenShift 4.19 using enterprise-grade tuning techniques.
 
 This workshop demonstrates real-world scenarios where microsecond-level latency matters, including financial trading systems, real-time gaming, IoT edge computing, and high-frequency data processing applications.
 
@@ -11,9 +11,9 @@ This workshop demonstrates real-world scenarios where microsecond-level latency 
 
 *Platform Engineers & SREs* -- Learn advanced OpenShift performance tuning, CPU isolation, real-time kernel configuration, and automated cluster management at scale.
 
-*Application Architects* -- Understand how to design containerized applications for ultra-low latency requirements while leveraging GitOps workflows and multi-cluster management.
+*Application Architects* -- Understand how to design containerized applications for ultra-low latency requirements while leveraging performance optimization techniques.
 
-*DevOps Engineers* -- Master the integration of RHACM with ArgoCD for consistent performance profile deployment across development, staging, and production environments.
+*DevOps Engineers* -- Master performance tuning techniques for consistent performance profile deployment across development, staging, and production environments.
 
 == What Content Is Covered?
 
@@ -21,7 +21,7 @@ These are the *key modules* that will be covered:
 
 * _Module 1: Low-Latency Fundamentals_: Understanding latency requirements, OpenShift performance features, and workshop architecture overview.
 
-* _Module 2: RHACM & ArgoCD Integration_: Setting up Red Hat Advanced Cluster Management with ArgoCD for automated multi-cluster performance deployments.
+* _Module 2: Environment Setup and Verification_: Verifying your pre-configured SNO cluster and understanding the installed operators.
 
 * _Module 3: Baseline Performance Testing_: Using kube-burner to establish performance baselines and measure pod creation latency metrics.
 
@@ -31,7 +31,7 @@ These are the *key modules* that will be covered:
 
 * _Module 6: Monitoring & Validation_: Advanced performance monitoring, validation tools, and best practices for maintaining low-latency environments.
 
-* _Module 7: Case Study & Conclusion_: Real-world implementation example, lessons learned, and next steps for production deployment.
+* _Module 7: GPU Workloads (Optional)_: Configuring and optimizing GPU workloads on OpenShift using the NVIDIA GPU Operator.
 
 == What is Low-Latency Performance?
 
@@ -45,10 +45,10 @@ These are the *key modules* that will be covered:
 
 This workshop leverages several OpenShift 4.19 enterprise features:
 
-* **Performance Addon Operator**: Automated node tuning for real-time workloads
-* **Red Hat Advanced Cluster Management (RHACM)**: Multi-cluster governance and policy management
-* **OpenShift GitOps (ArgoCD)**: Declarative configuration management and deployment automation
-* **Node Tuning Operator**: Fine-grained system parameter optimization
+* **Node Tuning Operator**: Built-in operator for automated node tuning and Performance Profiles
+* **SR-IOV Network Operator**: High-performance networking with direct hardware access
+* **OpenShift Virtualization**: KubeVirt-based virtual machines with performance optimization
+* **Performance Profiles**: Declarative CPU isolation, HugePages, and real-time kernel configuration
 * **SR-IOV Network Operator**: High-performance networking with direct hardware access
 * **OpenShift Virtualization**: KubeVirt-based virtual machines with performance optimization
 
@@ -58,7 +58,7 @@ This workshop leverages several OpenShift 4.19 enterprise features:
 OpenShift provides certified, supportable low-latency capabilities backed by Red Hat engineering and extensive performance testing across diverse hardware platforms.
 
 **Automated Lifecycle Management:**
-RHACM enables consistent performance profile deployment, policy enforcement, and governance across multiple clusters without manual intervention.
+OpenShift provides declarative Performance Profiles that enable consistent performance tuning across nodes without manual intervention.
 
 **Production-Ready Integration:**
 Native integration between performance tuning, container orchestration, and enterprise security provides a complete platform for mission-critical low-latency applications.
@@ -69,22 +69,21 @@ Ready to start? Begin with Module 1 to understand the fundamentals, then progres
 
 **Learning Path:**
 1. **Start Here**: xref:module-01-low-latency-intro.adoc[Module 1 - Low-Latency Fundamentals]
-2. **Multi-Cluster Setup**: xref:module-02-rhacm-setup.adoc[Module 2 - RHACM & ArgoCD Integration] 
+2. **Environment Setup**: xref:module-02-environment-setup.adoc[Module 2 - Environment Setup and Verification] 
 3. **Performance Baseline**: xref:module-03-baseline-performance.adoc[Module 3 - Baseline Testing]
 4. **Core Optimization**: xref:module-04-core-performance-tuning.adoc[Module 4 - Performance Tuning]
 
 **Additional Resources:**
 * link:https://docs.openshift.com/container-platform/4.19/scalability_and_performance/what-huge-pages-do-and-how-they-are-consumed-by-apps.html[OpenShift Performance Documentation^]
-* link:https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes[RHACM Documentation^]
 * link:https://github.com/cloud-bulldozer/kube-burner[Kube-burner Performance Testing^]
+* link:https://docs.openshift.com/container-platform/latest/virt/about-virt.html[OpenShift Virtualization Documentation^]
 
 == Requirements for the Lab Environment
 
 **Prerequisites:**
-* OpenShift 4.19+ cluster with cluster-admin privileges
-* Minimum 3 worker nodes with metal instance types (for best performance characteristics)
-* RHACM operator installed and configured
-* Terminal access with `oc` CLI configured
+* Single Node OpenShift (SNO) 4.19+ cluster with cluster-admin privileges
+* SSH access to bastion host (pre-configured)
+* Terminal access with `oc` CLI configured (pre-configured on bastion)
 * Basic understanding of Kubernetes/OpenShift concepts
 
 **Hardware Recommendations:**

@@ -17,8 +17,8 @@ This module introduces the fundamentals of low-latency computing and demonstrate
 
 This workshop requires:
 
-* Access to a hub cluster with RHACM installed (covered in Module 2)
-* A target cluster that will be imported into RHACM (Single Node OpenShift recommended)
+* Access to a Single Node OpenShift (SNO) cluster (covered in Module 2)
+* SSH access to bastion host with pre-configured tools
 * Basic understanding of OpenShift and Kubernetes concepts
 
 [TIP]
@@ -155,9 +155,9 @@ Reference: https://docs.openshift.io/container-platform/4.19/scalability_and_per
 * *Consistency*: Standardized deployment and management across environments
 * *Version Control*: Configuration as code for auditability and reproducibility
 
-== Real-World Case Study Preview
+== Workshop Environment
 
-.*Tier 1 Bank Transformation*
+.*Pre-Configured SNO Cluster*
 A major financial institution successfully modernized their trading platform using OpenShift:
 
 * *Time to Market*: Reduced functional enhancement delivery from 2-3 months to a few days
@@ -210,17 +210,17 @@ In this module, you have:
 
 == Next Steps
 
-In Module 2, you will set up the workshop environment using Red Hat Advanced Cluster Management (RHACM) to safely manage your target cluster where all performance tuning will be applied. This multi-cluster approach ensures that experimental configurations don't impact your primary workshop environment.
+In Module 2, you will verify your pre-configured Single Node OpenShift (SNO) cluster and confirm that all required operators are installed and ready. Your environment comes pre-configured with all necessary components for the workshop exercises.
 
 Ready to start? Begin with Module 1 to understand the fundamentals, then progress through hands-on exercises that build upon each other.
 
 .*Learning Path:*
 1. **Start Here**: Module 1 - Low-Latency Fundamentals
-2. **Multi-Cluster Setup**: Module 2 - RHACM & ArgoCD Integration  
+2. **Environment Setup**: Module 2 - Environment Setup and Verification  
 3. **Performance Baseline**: Module 3 - Baseline Testing
 4. **Core Optimization**: Module 4 - Performance Tuning
 
 .*Additional Resources:*
 * https://docs.openshift.io/container-platform/4.19/scalability_and_performance/[OpenShift Performance Documentation^]
-* https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes[RHACM Documentation^]
 * https://github.com/cloud-bulldozer/kube-burner[Kube-burner Performance Testing^]
+* https://docs.openshift.com/container-platform/latest/virt/about-virt.html[OpenShift Virtualization Documentation^]

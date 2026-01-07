@@ -1,0 +1,610 @@
+= Module 7: GPU Workloads (Optional)
+
+[%hardbreaks]
+
+[IMPORTANT]
+====
+*Optional Module - GPU Hardware Required*
+
+This module is **optional** and requires GPU-enabled nodes in your OpenShift cluster. If you don't have GPU hardware available, you can skip this module and proceed to the workshop conclusion.
+
+GPU workloads are increasingly important for:
+* Machine Learning and AI inference
+* High-performance computing (HPC)
+* Video processing and encoding
+* Scientific computing
+
+This module demonstrates how to configure and optimize GPU workloads on OpenShift for low-latency performance.
+====
+
+== Module Overview
+
+This module covers deploying and optimizing GPU workloads on OpenShift using the NVIDIA GPU Operator. You'll learn how to:
+
+* Install and configure the NVIDIA GPU Operator
+* Verify GPU discovery and availability
+* Deploy GPU-enabled workloads
+* Measure GPU performance
+* Configure GPU passthrough for virtual machines (optional)
+
+== Prerequisites
+
+Before starting this module, ensure you have:
+
+* Completed Module 2 (Environment Setup) - verified cluster access
+* GPU-enabled nodes in your OpenShift cluster
+* Cluster-admin access to install operators
+* Basic understanding of GPU computing concepts
+
+[WARNING]
+====
+**GPU Hardware Requirement**
+
+This module requires physical GPU hardware (NVIDIA GPUs) in your cluster nodes. Virtual or emulated GPUs will not work for the exercises in this module.
+
+If you don't have GPU hardware, you can:
+* Skip this module
+* Review the concepts and configuration examples
+* Use this as reference for future GPU deployments
+====
+
+== Key Learning Objectives
+
+* Understand GPU Operator architecture and components
+* Install and configure the NVIDIA GPU Operator
+* Verify GPU discovery and node labeling
+* Deploy GPU-enabled workloads
+* Measure GPU performance and utilization
+* Configure GPU passthrough for VMs (optional)
+
+== Understanding GPU on OpenShift
+
+=== GPU Operator Overview
+
+The NVIDIA GPU Operator automates the management of all NVIDIA software components needed to provision GPUs in OpenShift, including:
+
+* **NVIDIA Driver**: Kernel modules and user-space libraries
+* **Container Toolkit**: Runtime for GPU containers
+* **Device Plugin**: Kubernetes device plugin for GPU discovery
+* **DCGM Exporter**: Metrics collection for GPU monitoring
+* **GPU Feature Discovery**: Automatic node labeling based on GPU capabilities
+
+=== GPU Architecture on OpenShift
+
+[cols="1,3"]
+|===
+| Component | Description
+
+| GPU Nodes
+| Worker nodes with physical NVIDIA GPUs installed
+
+| GPU Operator
+| Manages all NVIDIA software components automatically
+
+| Device Plugin
+| Makes GPUs available as schedulable resources in Kubernetes
+
+| Node Feature Discovery
+| Automatically labels nodes with GPU capabilities
+
+| DCGM Exporter
+| Provides GPU metrics to Prometheus for monitoring
+===
+
+=== GPU Workload Types
+
+* *Machine Learning Training*: Training neural networks with frameworks like TensorFlow, PyTorch
+* *Inference*: Running trained models for predictions
+* *HPC Workloads*: High-performance computing applications
+* *Video Processing*: Encoding, transcoding, and processing video content
+* *Scientific Computing*: Computational simulations and data analysis
+
+== Hands-on Exercise: Installing the NVIDIA GPU Operator
+
+=== Step 1: Verify GPU Hardware
+
+Before installing the GPU Operator, verify that your nodes have GPUs available.
+
+. Check if nodes have GPUs:
++
+[source,bash,role=execute]
+----
+# List all nodes
+oc get nodes
+
+# Check for GPU labels (if GPU Operator is already partially installed)
+oc get nodes -l feature.node.kubernetes.io/pci-10de.present=true
+
+# Check node hardware (requires SSH access to nodes)
+oc debug node/<node-name> -- chroot /host nvidia-smi
+----
+
+[NOTE]
+====
+**GPU Detection**
+
+If `nvidia-smi` is not available, the GPU Operator will install the NVIDIA drivers. The operator handles driver installation automatically.
+====
+
+=== Step 2: Create Namespace for GPU Operator
+
+. Create the namespace for GPU Operator:
++
+[source,bash,role=execute]
+----
+oc create namespace gpu-operator-resources
+----
+
+=== Step 3: Install GPU Operator via OperatorHub
+
+. Install the NVIDIA GPU Operator from OperatorHub:
++
+[source,bash,role=execute]
+----
+# Create OperatorGroup
+cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: gpu-operator-group
+  namespace: gpu-operator-resources
+spec:
+  targetNamespaces:
+  - gpu-operator-resources
+EOF
+
+# Create Subscription
+cat <<EOF | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: gpu-operator-certified
+  namespace: gpu-operator-resources
+spec:
+  channel: "v1.11"
+  name: gpu-operator-certified
+  source: certified-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
+EOF
+----
+
+. Wait for the operator to be installed:
++
+[source,bash,role=execute]
+----
+# Watch the CSV until it shows "Succeeded"
+watch oc get csv -n gpu-operator-resources
+
+# Once installed, check operator pods
+oc get pods -n gpu-operator-resources
+----
+
+=== Step 4: Create ClusterPolicy
+
+The ClusterPolicy custom resource configures all GPU Operator components.
+
+. Create a ClusterPolicy:
++
+[source,bash,role=execute]
+----
+cat <<EOF | oc apply -f -
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: cluster-policy
+spec:
+  driver:
+    enabled: true
+  toolkit:
+    enabled: true
+  devicePlugin:
+    enabled: true
+  dcgmExporter:
+    enabled: true
+  gfd:
+    enabled: true
+EOF
+----
+
+. Monitor the ClusterPolicy status:
++
+[source,bash,role=execute]
+----
+# Check ClusterPolicy status
+oc get clusterpolicy -o yaml
+
+# Watch pods being created
+watch oc get pods -n gpu-operator-resources
+
+# Check for driver daemonset
+oc get daemonset -n gpu-operator-resources
+----
+
+[NOTE]
+====
+**Driver Installation Time**
+
+NVIDIA driver installation can take 5-10 minutes. The operator will:
+1. Install kernel modules
+2. Load drivers on GPU nodes
+3. Start device plugin
+4. Label nodes with GPU information
+====
+
+== Verifying GPU Discovery
+
+=== Step 1: Check Node Labels
+
+GPU Feature Discovery automatically labels nodes with GPU information.
+
+. Check for GPU-related node labels:
++
+[source,bash,role=execute]
+----
+# List all GPU-related labels
+oc get nodes -o json | jq -r '.items[] | select(.metadata.labels | to_entries | map(.key) | any(startswith("nvidia.com"))) | {name: .metadata.name, labels: [.metadata.labels | to_entries[] | select(.key | startswith("nvidia.com"))]}'
+
+# Check specific GPU labels
+oc get nodes -l nvidia.com/gpu.present=true
+
+# View all labels on a GPU node
+oc get node <gpu-node-name> --show-labels | grep nvidia
+----
+
+=== Step 2: Verify GPU Resources
+
+. Check if GPUs are available as schedulable resources:
++
+[source,bash,role=execute]
+----
+# Describe a GPU node to see allocatable resources
+oc describe node <gpu-node-name> | grep -A 5 "Allocatable:"
+
+# Should show: nvidia.com/gpu: <number>
+----
+
+=== Step 3: Test GPU Access
+
+. Create a test pod to verify GPU access:
++
+[source,bash,role=execute]
+----
+cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-test
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: cuda-vector-add
+    image: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+    command: ["nvidia-smi"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+EOF
+
+# Wait for pod to start
+oc wait --for=condition=Ready pod/gpu-test --timeout=60s
+
+# Check pod logs
+oc logs gpu-test
+
+# Clean up
+oc delete pod gpu-test
+----
+
+[NOTE]
+====
+**Expected Output**
+
+The `nvidia-smi` command should show:
+* GPU model and memory
+* Driver version
+* CUDA version
+* GPU utilization (if any)
+
+If you see errors, check the GPU Operator logs and ClusterPolicy status.
+====
+
+== Deploying GPU Workloads
+
+=== Example: TensorFlow GPU Workload
+
+. Create a TensorFlow workload that uses GPU:
++
+[source,bash,role=execute]
+----
+cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tensorflow-gpu
+spec:
+  restartPolicy: Never
+  containers:
+  - name: tensorflow
+    image: tensorflow/tensorflow:latest-gpu
+    command: ["python", "-c", "import tensorflow as tf; print('GPUs:', tf.config.list_physical_devices('GPU')); print('TensorFlow version:', tf.__version__)"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+      requests:
+        nvidia.com/gpu: 1
+EOF
+
+# Check logs
+oc logs tensorflow-gpu
+
+# Clean up
+oc delete pod tensorflow-gpu
+----
+
+=== Example: PyTorch GPU Workload
+
+. Create a PyTorch workload:
++
+[source,bash,role=execute]
+----
+cat <<EOF | oc apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pytorch-gpu
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pytorch
+    image: pytorch/pytorch:latest
+    command: ["python", "-c", "import torch; print('CUDA available:', torch.cuda.is_available()); print('GPU count:', torch.cuda.device_count() if torch.cuda.is_available() else 0)"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+      requests:
+        nvidia.com/gpu: 1
+EOF
+
+# Check logs
+oc logs pytorch-gpu
+
+# Clean up
+oc delete pod pytorch-gpu
+----
+
+== GPU Performance Testing
+
+=== Using DCGM for Metrics
+
+The GPU Operator includes DCGM Exporter for GPU metrics.
+
+. Check DCGM Exporter:
++
+[source,bash,role=execute]
+----
+# Check DCGM Exporter pods
+oc get pods -n gpu-operator-resources -l app=nvidia-dcgm-exporter
+
+# Check DCGM metrics endpoint
+oc get svc -n gpu-operator-resources nvidia-dcgm-exporter
+
+# Port-forward to access metrics
+oc port-forward -n gpu-operator-resources svc/nvidia-dcgm-exporter 9400:9400
+----
+
+. Access metrics (in another terminal):
++
+[source,bash]
+----
+# View metrics
+curl http://localhost:9400/metrics | grep DCGM
+----
+
+=== GPU Workload Benchmarking
+
+. Create a GPU benchmark workload:
++
+[source,bash,role=execute]
+----
+cat <<EOF | oc apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gpu-benchmark
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: benchmark
+        image: nvidia/cuda:12.0.0-base-ubuntu22.04
+        command:
+        - sh
+        - -c
+        - |
+          nvidia-smi --query-gpu=name,memory.total,memory.used,utilization.gpu --format=csv
+          nvidia-smi dmon -s u -c 10
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+          requests:
+            nvidia.com/gpu: 1
+EOF
+
+# Watch job
+oc get job gpu-benchmark -w
+
+# Check logs
+oc logs job/gpu-benchmark
+
+# Clean up
+oc delete job gpu-benchmark
+----
+
+== GPU Passthrough for Virtual Machines (Optional)
+
+[NOTE]
+====
+**Advanced Topic**
+
+GPU passthrough allows virtual machines to directly access physical GPUs, providing near-native performance for GPU workloads in VMs.
+====
+
+=== Prerequisites for GPU Passthrough
+
+* OpenShift Virtualization installed (from Module 2)
+* IOMMU enabled on nodes
+* GPU hardware that supports passthrough
+* Appropriate node configuration
+
+=== Configuring GPU Passthrough
+
+. Create a HostDevice resource for GPU passthrough:
++
+[source,bash,role=execute]
+----
+cat <<EOF | oc apply -f -
+apiVersion: kubevirt.io/v1
+kind: HostDevice
+metadata:
+  name: nvidia-gpu
+spec:
+  resourceName: nvidia.com/gpu
+  selector:
+    vendor: "10de"  # NVIDIA vendor ID
+EOF
+----
+
+. Create a VM with GPU passthrough:
++
+[source,bash,role=execute]
+----
+cat <<EOF | oc apply -f -
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: gpu-vm
+spec:
+  running: true
+  template:
+    spec:
+      domain:
+        devices:
+          hostDevices:
+          - deviceName: nvidia-gpu
+            name: gpu1
+        resources:
+          requests:
+            memory: 4Gi
+          limits:
+            memory: 4Gi
+            devices:
+              nvidia.com/gpu: 1
+      volumes:
+      - name: containerdisk
+        containerDisk:
+          image: quay.io/kubevirt/fedora-cloud-container-disk-demo
+EOF
+----
+
+[WARNING]
+====
+**GPU Passthrough Complexity**
+
+GPU passthrough requires:
+* Specific hardware support (IOMMU, VT-d/AMD-Vi)
+* Proper kernel parameters
+* Driver compatibility
+* May require node reboots
+
+This is an advanced configuration and may not work on all hardware or cloud providers.
+====
+
+== Module Summary
+
+In this optional module, you have:
+
+✅ *Installed* the NVIDIA GPU Operator +
+✅ *Verified* GPU discovery and node labeling +
+✅ *Deployed* GPU-enabled workloads +
+✅ *Measured* GPU performance using DCGM +
+✅ *Explored* GPU passthrough for VMs (optional) +
+
+.*Key Takeaways*
+* The GPU Operator automates all NVIDIA software component management
+* GPUs are exposed as schedulable Kubernetes resources (`nvidia.com/gpu`)
+* GPU Feature Discovery automatically labels nodes with GPU capabilities
+* DCGM Exporter provides GPU metrics for monitoring
+* GPU passthrough enables direct GPU access in virtual machines
+
+.*Next Steps*
+If you've completed all modules, you now have comprehensive knowledge of:
+* Baseline performance measurement
+* CPU isolation and HugePages configuration
+* Real-time kernel tuning
+* Low-latency virtualization
+* Performance monitoring and validation
+* GPU workload optimization (optional)
+
+== Troubleshooting
+
+=== GPU Operator Not Installing
+
+. Check operator subscription:
++
+[source,bash,role=execute]
+----
+oc get subscription -n gpu-operator-resources
+oc describe subscription -n gpu-operator-resources
+----
+
+. Check for install plan issues:
++
+[source,bash,role=execute]
+----
+oc get installplan -n gpu-operator-resources
+oc describe installplan -n gpu-operator-resources <installplan-name>
+----
+
+=== GPUs Not Discovered
+
+. Check ClusterPolicy status:
++
+[source,bash,role=execute]
+----
+oc get clusterpolicy -o yaml
+oc describe clusterpolicy
+----
+
+. Check driver installation:
++
+[source,bash,role=execute]
+----
+oc get daemonset -n gpu-operator-resources
+oc logs -n gpu-operator-resources -l app=nvidia-operator-validator
+----
+
+=== GPU Pods Failing to Start
+
+. Check pod events:
++
+[source,bash,role=execute]
+----
+oc describe pod <gpu-pod-name>
+oc get events --field-selector involvedObject.name=<gpu-pod-name>
+----
+
+. Verify GPU resources are available:
++
+[source,bash,role=execute]
+----
+oc describe node <gpu-node> | grep -i gpu
+----
+
+== Additional Resources
+
+* link:https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/[NVIDIA GPU Operator Documentation^]
+* link:https://docs.openshift.com/container-platform/latest/virt/virtual_machines/advanced_vm_management/virtual_machines.html[OpenShift Virtualization GPU Passthrough^]
+* link:https://github.com/NVIDIA/gpu-operator[GPU Operator GitHub Repository^]
+
