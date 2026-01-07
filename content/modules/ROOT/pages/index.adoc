@@ -41,7 +41,7 @@ These are the *key modules* that will be covered:
 * **Hardware Acceleration**: Direct hardware access via SR-IOV for network-intensive applications
 * **Memory Optimization**: HugePages and NUMA-aware allocation for reduced memory management overhead
 
-## Workshop Technologies
+=== Workshop Technologies
 
 This workshop leverages several OpenShift 4.20 enterprise features:
 
@@ -49,8 +49,6 @@ This workshop leverages several OpenShift 4.20 enterprise features:
 * **SR-IOV Network Operator**: High-performance networking with direct hardware access
 * **OpenShift Virtualization**: KubeVirt-based virtual machines with performance optimization
 * **Performance Profiles**: Declarative CPU isolation, HugePages, and real-time kernel configuration
-* **SR-IOV Network Operator**: High-performance networking with direct hardware access
-* **OpenShift Virtualization**: KubeVirt-based virtual machines with performance optimization
 
 == Why Choose OpenShift for Low-Latency Workloads?
 
