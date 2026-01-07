@@ -225,7 +225,7 @@ Your SNO cluster includes these pre-configured components:
 | *Cert Manager*
 | Manages TLS certificates for secure communication
 | Pre-installed ✅
-===
+|===
 
 === Step 4: Final Verification
 
