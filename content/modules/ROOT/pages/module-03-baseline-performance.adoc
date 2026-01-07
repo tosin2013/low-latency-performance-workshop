@@ -29,16 +29,9 @@ This module requires:
 
 [TIP]
 ====
-*Quick Login to Your SNO Cluster*
+*Cluster Access via Bastion*
 
-Login to your SNO cluster:
-
-[source,bash,role=execute,subs="attributes"]
-----
-oc login {cluster_api} -u {username} -p <workshop-password>
-----
-
-Replace `<workshop-password>` with the password provided by your administrator.
+SSH to your bastion host (credentials from Module 2) and run `oc whoami` to verify you're connected as `system:admin`.
 ====
 
 .*Performance Testing Overview*
@@ -47,7 +40,7 @@ In this hands-on lab, you'll use kube-burner, a Kubernetes performance testing t
 [[connecting-to-target-cluster]]
 == Connecting to Your Target Cluster
 
-Before beginning performance testing, you must connect to your SNO cluster that was set up and verified in Module 2.
+Before beginning performance testing, ensure you're connected to your SNO cluster via the bastion host (set up in Module 2).
 
 .*Prerequisites Check*
 Ensure you completed Module 2 and have:
@@ -57,32 +50,22 @@ Ensure you completed Module 2 and have:
 * OpenShift Virtualization installed (if applicable)
 * Built-in Node Tuning Operator verified
 
-=== Step 1: Log into Your Target Cluster
+=== Step 1: Verify Cluster Access
 
-. From your hub cluster or workstation, connect to your target cluster:
+. SSH to your bastion host and verify cluster access:
 +
 [source,bash,role=execute]
 ----
-# Verify cluster access
+# Verify you're authenticated
+oc whoami
+
+# Verify cluster nodes
 oc get nodes
-
-# Log into your target cluster (replace with your cluster details)
-# Option 1: Using cluster API URL and token
-oc login --token=<your-cluster-token> --server=https://api.<cluster-name>.<domain>:6443
-
-# Option 2: If you have multiple contexts configured
-oc config get-contexts
-oc config use-context <target-cluster-context>
 ----
 +
 [TIP]
 ====
-If you don't have cluster access:
-
-1. SSH to your bastion host (from Module 2)
-2. The kubeconfig is pre-configured on the bastion
-3. Run `oc get nodes` to verify access
-4. Copy the login command from the target cluster's web console
+The bastion host has `oc`, `kubectl`, and KUBECONFIG pre-configured. You should see `system:admin` when running `oc whoami`.
 ====
 
 . Verify you're connected to the correct cluster:
@@ -247,8 +230,8 @@ curl -L https://github.com/kube-burner/kube-burner/releases/download/v1.17.5/kub
 
 # Extract the binary
 tar -xzf kube-burner.tar.gz
-ls ~/
-cd ~/
+ls ~/kube-burner
+
 sudo mv kube-burner /usr/local/bin/
 
 # Verify installation
