@@ -126,7 +126,29 @@ Expected output should show:
 * One node in `Ready` state (your SNO)
 * OpenShift version 4.20 or later
 
-=== Step 2: Verify Pre-Installed Operators
+=== Step 2: Clone Workshop Repository
+
+The workshop includes educational Python scripts for performance analysis. Clone the repository to your home directory:
+
+[source,bash,role=execute]
+----
+# Clone the workshop repository
+cd ~
+git clone https://github.com/tosin2013/low-latency-performance-workshop.git
+
+# Install Python dependencies
+pip install --user PyYAML
+
+# Verify scripts are available
+ls ~/low-latency-performance-workshop/scripts/*.py | head -5
+----
+
+[TIP]
+====
+These Python scripts provide color-coded analysis output and educational explanations that are much clearer than raw JSON/bash output. You'll use them throughout modules 3-6 for performance analysis.
+====
+
+=== Step 3: Verify Pre-Installed Operators
 
 Your SNO cluster was provisioned with all required operators. Let's verify they're running.
 
@@ -202,7 +224,7 @@ If any operator is not yet ready, wait a few minutes - the provisioning script d
 * **Cert Manager**: For managing TLS certificates
 ====
 
-=== Step 3: Understanding the Performance Operator Architecture
+=== Step 4: Understanding the Performance Operator Architecture
 
 Your SNO cluster includes these pre-configured components:
 
@@ -227,7 +249,7 @@ Your SNO cluster includes these pre-configured components:
 | Pre-installed ✅
 |===
 
-=== Step 4: Final Verification
+=== Step 5: Final Verification
 
 . Verify built-in Node Tuning Operator:
 +
