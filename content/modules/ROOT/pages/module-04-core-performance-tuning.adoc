@@ -44,57 +44,25 @@ The Performance Profile Controller (PPC) is integrated into the Node Tuning Oper
 
 First, we'll identify your cluster architecture and configure the appropriate nodes for performance tuning.
 
-. Switch to your target cluster context:
+. Verify cluster access (you should already be connected via bastion):
 +
 [source,bash,role=execute]
 ----
-oc config use-context target-cluster
+# Verify you're connected to the SNO cluster
+oc whoami
+oc get nodes
 ----
 
-. Detect your cluster architecture:
+. Get your SNO node information:
 +
 [source,bash,role=execute]
 ----
-# Check cluster architecture
-TOTAL_NODES=$(oc get nodes --no-headers | wc -l)
-WORKER_NODES=$(oc get nodes -l node-role.kubernetes.io/worker= --no-headers | wc -l)
-MASTER_NODES=$(oc get nodes -l node-role.kubernetes.io/master= --no-headers | wc -l)
-
-echo "=== Cluster Architecture Detection ==="
-echo "Total nodes: $TOTAL_NODES"
-echo "Master nodes: $MASTER_NODES"
-echo "Worker nodes: $WORKER_NODES"
-
-if [ $TOTAL_NODES -eq 1 ]; then
-    echo "✅ Detected: Single Node OpenShift (SNO)"
-    CLUSTER_TYPE="SNO"
-    TARGET_NODE=$(oc get nodes -o jsonpath='{.items[0].metadata.name}')
-    echo "Target node: $TARGET_NODE"
-elif [ $WORKER_NODES -gt 0 ]; then
-    echo "✅ Detected: Multi-node cluster with dedicated workers"
-    CLUSTER_TYPE="MULTI_NODE"
-    TARGET_NODE=$(oc get nodes -l node-role.kubernetes.io/worker= -o jsonpath='{.items[0].metadata.name}')
-    echo "Target worker node: $TARGET_NODE"
-else
-    echo "⚠️  Detected: Multi-node cluster without dedicated workers"
-    CLUSTER_TYPE="MULTI_MASTER"
-    TARGET_NODE=$(oc get nodes -l node-role.kubernetes.io/master= -o jsonpath='{.items[0].metadata.name}')
-    echo "Target master node: $TARGET_NODE"
-fi
-
-echo "CLUSTER_TYPE=$CLUSTER_TYPE" > /tmp/cluster-config
-echo "TARGET_NODE=$TARGET_NODE" >> /tmp/cluster-config
-----
-
-. Check node resources and CPU topology:
-+
-[source,bash,role=execute]
-----
-# Load cluster configuration
-source /tmp/cluster-config
+# Get the SNO node name
+TARGET_NODE=$(oc get nodes -o jsonpath='{.items[0].metadata.name}')
+echo "Target node: $TARGET_NODE"
 
 # Get detailed node information
-echo "=== Node Information for $TARGET_NODE ==="
+echo "=== Node Information ==="
 oc describe node $TARGET_NODE | grep -E "(Name:|Roles:|Capacity:|Allocatable:)" -A 10
 
 # Check CPU information
@@ -102,135 +70,36 @@ echo "=== CPU Topology ==="
 oc debug node/$TARGET_NODE -- chroot /host lscpu | grep -E "(CPU\(s\)|Thread|Core|Socket|NUMA)"
 ----
 
-. Configure node labels based on cluster type:
-+
-[source,bash,role=execute]
-----
-# Load cluster configuration
-source /tmp/cluster-config
+[NOTE]
+====
+**SNO Configuration Note**
 
-if [ "$CLUSTER_TYPE" = "SNO" ]; then
-    echo "=== SNO Configuration ==="
-    echo "✅ Single Node OpenShift detected - no additional labeling needed"
-    echo "Performance Profile will target: node-role.kubernetes.io/master"
+Since this is a Single Node OpenShift cluster, no additional node labeling is needed. The Performance Profile will automatically target the master node (which also acts as the worker in SNO).
+====
 
-elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
-    echo "=== Multi-Node Configuration ==="
-    echo "🏷️  Labeling worker node for performance tuning..."
+=== Step 2: Verify Machine Config Pool (SNO)
 
-    # Label the worker node(s) for performance tuning
-    oc label node $TARGET_NODE node-role.kubernetes.io/worker-rt= --overwrite
-
-    # Verify the label
-    echo "✅ Labeled nodes:"
-    oc get nodes --show-labels | grep worker-rt
-
-else
-    echo "=== Multi-Master Configuration ==="
-    echo "🏷️  Labeling master node for performance tuning..."
-
-    # Label a master node for performance tuning (advanced scenario)
-    oc label node $TARGET_NODE node-role.kubernetes.io/master-rt= --overwrite
-
-    # Verify the label
-    echo "✅ Labeled nodes:"
-    oc get nodes --show-labels | grep master-rt
-fi
-----
-
-=== Step 2: Create Machine Config Pool (Multi-Node Only)
-
-For multi-node clusters, create a dedicated Machine Config Pool to isolate performance configuration changes. SNO clusters can skip this step.
-
-. Create Machine Config Pool based on cluster type:
-+
-[source,bash,role=execute]
-----
-# Load cluster configuration
-source /tmp/cluster-config
-
-if [ "$CLUSTER_TYPE" = "SNO" ]; then
-    echo "=== SNO Configuration ==="
-    echo "✅ Skipping Machine Config Pool creation for Single Node OpenShift"
-    echo "📝 SNO uses existing 'master' Machine Config Pool"
-    echo ""
-    echo "Existing Machine Config Pools:"
-    oc get mcp
-
-elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
-    echo "=== Multi-Node Configuration ==="
-    echo "🔧 Creating dedicated worker-rt Machine Config Pool..."
-
-    cat << 'EOF' | oc apply -f -
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineConfigPool
-metadata:
-  name: worker-rt
-  labels:
-    machineconfiguration.openshift.io/role: worker-rt
-spec:
-  machineConfigSelector:
-    matchExpressions:
-    - {key: machineconfiguration.openshift.io/role, operator: In, values: [worker, worker-rt]}
-  nodeSelector:
-    matchLabels:
-      node-role.kubernetes.io/worker-rt: ""
-  paused: false
-EOF
-
-    echo "✅ Created worker-rt Machine Config Pool"
-
-else
-    echo "=== Multi-Master Configuration ==="
-    echo "🔧 Creating dedicated master-rt Machine Config Pool..."
-
-    cat << 'EOF' | oc apply -f -
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineConfigPool
-metadata:
-  name: master-rt
-  labels:
-    machineconfiguration.openshift.io/role: master-rt
-spec:
-  machineConfigSelector:
-    matchExpressions:
-    - {key: machineconfiguration.openshift.io/role, operator: In, values: [master, master-rt]}
-  nodeSelector:
-    matchLabels:
-      node-role.kubernetes.io/master-rt: ""
-  paused: false
-EOF
-
-    echo "✅ Created master-rt Machine Config Pool"
-fi
-----
+For SNO clusters, the default `master` Machine Config Pool is used. No additional pool creation is needed.
 
 . Verify Machine Config Pool status:
 +
 [source,bash,role=execute]
 ----
-# Load cluster configuration
-source /tmp/cluster-config
+# SNO uses the default master pool
+echo "=== Machine Config Pools ==="
+oc get mcp
 
-echo "=== Machine Config Pool Status ==="
-if [ "$CLUSTER_TYPE" = "SNO" ]; then
-    echo "📋 SNO uses existing pools:"
-    oc get mcp
-else
-    echo "📋 All Machine Config Pools:"
-    oc get mcp
-
-    if [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
-        echo ""
-        echo "📊 Worker-RT Pool Details:"
-        oc get mcp worker-rt -o yaml | grep -A 5 -B 5 "readyMachineCount\|updatedMachineCount"
-    else
-        echo ""
-        echo "📊 Master-RT Pool Details:"
-        oc get mcp master-rt -o yaml | grep -A 5 -B 5 "readyMachineCount\|updatedMachineCount"
-    fi
-fi
+echo ""
+echo "📊 Master Pool Details:"
+oc get mcp master -o yaml | grep -E "(readyMachineCount|updatedMachineCount|machineCount)" | head -3
 ----
+
+[NOTE]
+====
+**SNO Machine Config Pool**
+
+Single Node OpenShift uses the built-in `master` Machine Config Pool. The Performance Profile will automatically apply to this pool, so no additional configuration is needed.
+====
 
 === Step 3: Create the Performance Profile
 

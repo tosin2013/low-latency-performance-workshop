@@ -9,7 +9,7 @@ This module focuses on optimizing virtual machines for low-latency performance u
 
 * Completed Module 3 (Baseline performance metrics collected)
 * OpenShift Virtualization operator installed (from Module 2)
-* Single Node OpenShift (SNO) or multi-node cluster
+* Single Node OpenShift (SNO) cluster
 * Baseline performance metrics from Module 3
 * Optional: Completed Module 4 (Performance Profiles for enhanced VM performance)
 
@@ -126,7 +126,6 @@ if [ "$PERF_PROFILES" -gt 0 ]; then
         echo ""
         echo "💡 Recommended HugePages for Module 5:"
         echo "   • SNO (64GB+ RAM): 8-16GB HugePages"
-        echo "   • Multi-Node (64GB+ RAM): 16-24GB HugePages"
         echo ""
         echo "   The next step will update HugePages automatically!"
     else
@@ -197,8 +196,6 @@ Module 4 allocates minimal HugePages (1GB) for demonstration purposes. Module 5 
 * **SNO (125GB+ RAM)**: 24GB HugePages (~8 VMIs)
 * **SNO (64-128GB RAM)**: 24GB HugePages (~8 VMIs)
 * **SNO (32-64GB RAM)**: 12GB HugePages (~4 VMIs)
-* **Multi-Node (128GB+ worker)**: 48GB HugePages (~16 VMIs)
-* **Multi-Node (64-128GB worker)**: 32GB HugePages (~10 VMIs)
 
 The script automatically calculates the optimal allocation for your cluster!
 
