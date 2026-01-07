@@ -34,44 +34,6 @@ oc whoami
 TIP: The bastion has `oc`, `kubectl`, and your KUBECONFIG pre-configured. No additional setup needed!
 ====
 
-[NOTE]
-====
-*Alternative: Direct Cluster Access*
-
-If you prefer direct cluster access (e.g., from your local machine), use these credentials:
-
-[cols="1,2"]
-|===
-| API URL | `{openshift_api_url}`
-| Console | `{openshift_console_url}`
-| Username | `kubeadmin`
-| Password | Available on bastion at `~/ocp/auth/kubeadmin-password`
-|===
-
-[source,bash,role=execute,subs="attributes"]
-----
-# Direct login (from your local machine)
-oc login {openshift_api_url} -u kubeadmin -p <password>
-----
-
-The kubeadmin password is available on the bastion at `~/ocp/auth/kubeadmin-password`.
-====
-
-[TIP]
-====
-*Launch Your Development Environment*
-
-Click below to launch your pre-configured Dev Spaces workspace with all tools and credentials:
-
-link:{devspaces_factory}[🚀 *Open in Dev Spaces*,role=button]
-
-Your workspace includes:
-
-* `oc` CLI pre-configured with your SNO kubeconfig
-* SSH keys for bastion access
-* `kube-burner` for performance testing
-* Workshop documentation and scripts
-====
 
 == Module Overview
 
