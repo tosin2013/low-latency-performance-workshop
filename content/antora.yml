@@ -1,6 +1,6 @@
 ---
 name: modules
-title: Low-Latency Performance Workshop for OpenShift 4.19
+title: Low-Latency Performance Workshop for OpenShift 4.20
 version: main
 nav:
   - modules/ROOT/nav.adoc
@@ -10,9 +10,9 @@ asciidoc:
     lab_name: Welcome to the Low-Latency Performance Workshop!
     release-version: main
     page-pagination: true
-    product_name: OpenShift 4.19
+    product_name: OpenShift 4.20
     workshop_name: Low-Latency Performance Workshop
-    openshift_version: 4.19
+    openshift_version: 4.20
     kube_burner_version: 1.17+
     # These defaults match what AgnosticD/Showroom provides in user_data
     guid: student1
@@ -33,7 +33,7 @@ asciidoc:
   page-links:
     - url: https://redhat.com
       text: Red Hat
-    - url: https://docs.openshift.com/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html
+    - url: https://docs.openshift.com/container-platform/4.20/scalability_and_performance/cnf-low-latency-tuning.html
       text: OpenShift Low Latency Tuning
     - url: https://kube-burner.github.io/kube-burner/latest/
       text: Kube-burner Documentation

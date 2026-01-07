@@ -124,7 +124,7 @@ Expected output should show:
 +
 * User: `system:admin`
 * One node in `Ready` state (your SNO)
-* OpenShift version 4.19 or later
+* OpenShift version 4.20 or later
 
 === Step 2: Verify Pre-Installed Operators
 
@@ -282,14 +282,14 @@ If any operator is not ready, wait 5-10 minutes for initialization to complete.
 
 [NOTE]
 ====
-**OpenShift 4.19+ Performance Operator Architecture**
+**OpenShift 4.20+ Performance Operator Architecture**
 
 * **Node Tuning Operator**: Built-in to OpenShift 4.11+ (no installation required)
 * **Performance Addon Operator**: **DEPRECATED** in 4.11+ (functionality moved to Node Tuning Operator)
 * **SR-IOV Network Operator**: Requires installation for high-performance networking
 * **OpenShift Virtualization**: Requires installation for VM scenarios
 
-For more details, see: https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.19 Low Latency Tuning Documentation^]
+For more details, see: https://docs.openshift.io/container-platform/4.20/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.20 Low Latency Tuning Documentation^]
 ====
 
 == Workshop Environment Verification
@@ -350,7 +350,7 @@ In this module, you have:
 
 .*Key Takeaways*
 * Your workshop SNO cluster comes **pre-configured** with all required operators
-* **OpenShift 4.19+** has mature built-in performance capabilities via Node Tuning Operator
+* **OpenShift 4.20+** has mature built-in performance capabilities via Node Tuning Operator
 * The workshop uses a dedicated SNO cluster for isolated performance testing
 * All operators are automatically deployed during cluster provisioning
 
@@ -434,7 +434,7 @@ On AWS or other cloud providers, SR-IOV may not detect physical network adapters
 * Use Performance Profiles for consistent tuning across nodes
 * Test operator functionality before deploying production workloads
 
-=== Performance Operator Architecture (OpenShift 4.19+)
+=== Performance Operator Architecture (OpenShift 4.20+)
 
 * **Node Tuning Operator** (Built-in): Manages TuneD profiles AND Performance Profiles
 * **Performance Addon Operator** (Deprecated): Functionality moved to Node Tuning Operator
@@ -443,7 +443,7 @@ On AWS or other cloud providers, SR-IOV may not detect physical network adapters
 
 == Knowledge Check
 
-. What is the purpose of the Node Tuning Operator in OpenShift 4.19+?
+. What is the purpose of the Node Tuning Operator in OpenShift 4.20+?
 . Why was the Performance Addon Operator deprecated in OpenShift 4.11+?
 . What performance capabilities are now built into the Node Tuning Operator?
 . Which operators come pre-installed on your workshop SNO cluster?
@@ -466,6 +466,6 @@ The **pre-installed operators** verified in this module will be essential for su
 
 == Additional Resources
 
-* link:https://docs.openshift.com/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.19 Low Latency Tuning Documentation^]
+* link:https://docs.openshift.com/container-platform/4.20/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.20 Low Latency Tuning Documentation^]
 * link:https://docs.openshift.com/container-platform/latest/virt/about-virt.html[OpenShift Virtualization Documentation^]
 * link:https://github.com/tosin2013/low-latency-performance-workshop[Workshop Repository^]

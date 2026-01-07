@@ -1052,7 +1052,7 @@ Based on the comprehensive validation, the workshop demonstrates:
 
 == Workshop Conclusion
 
-Congratulations! You have successfully completed the **Low-Latency Performance Workshop for OpenShift 4.19**.
+Congratulations! You have successfully completed the **Low-Latency Performance Workshop for OpenShift 4.20**.
 
 You now have the knowledge and tools to:
 - **Establish performance baselines** using modern testing tools

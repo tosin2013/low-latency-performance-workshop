@@ -41,3 +41,10 @@
 ** xref:module-07-gpu-workloads.adoc#verifying-gpu-discovery[Verifying GPU Discovery]
 ** xref:module-07-gpu-workloads.adoc#deploying-gpu-workloads[Deploying GPU Workloads]
 ** xref:module-07-gpu-workloads.adoc#gpu-performance-testing[GPU Performance Testing]
+
+* xref:module-08-conclusion.adoc[8. Workshop Conclusion and Next Steps]
+** xref:module-08-conclusion.adoc#workshop-journey-recap[Workshop Journey Recap]
+** xref:module-08-conclusion.adoc#key-takeaways[Key Takeaways]
+** xref:module-08-conclusion.adoc#applying-these-techniques-in-your-environment[Applying These Techniques]
+** xref:module-08-conclusion.adoc#common-use-cases[Common Use Cases]
+** xref:module-08-conclusion.adoc#next-steps[Next Steps]

@@ -107,11 +107,11 @@ A Kubernetes Operator is a method of packaging, deploying, and managing a Kubern
 * *Lifecycle Management*: Handle installation, updates, configuration changes, and scaling
 
 .*Relevance to Performance Tuning*
-OpenShift performance tuning features are managed through various Operators. **Important**: Starting with OpenShift 4.11, the performance operator architecture has been significantly updated. This workshop targets **OpenShift 4.19**, which fully implements the modernized architecture:
+OpenShift performance tuning features are managed through various Operators. **Important**: Starting with OpenShift 4.11, the performance operator architecture has been significantly updated. This workshop targets **OpenShift 4.20**, which fully implements the modernized architecture:
 
 [cols="1,3,1"]
 |===
-| Operator | Purpose | Status (4.19)
+| Operator | Purpose | Status (4.20)
 
 | *Node Tuning Operator (NTO)*
 | Manages TuneD daemon AND Performance Profiles. Since OpenShift 4.11+, this operator has absorbed the functionality of the deprecated Performance Addon Operator
@@ -134,11 +134,11 @@ OpenShift performance tuning features are managed through various Operators. **I
 | Requires Installation 📦
 |===
 
-.*Critical Architecture Changes in OpenShift 4.11+ (Including 4.19)*
+.*Critical Architecture Changes in OpenShift 4.11+ (Including 4.20)*
 
 [NOTE]
 ====
-**Performance Addon Operator Deprecation**: As of OpenShift 4.11, the Performance Addon Operator has been deprecated and its functionality has been integrated into the Node Tuning Operator. **OpenShift 4.19** (our target version) fully implements this modernized architecture:
+**Performance Addon Operator Deprecation**: As of OpenShift 4.11, the Performance Addon Operator has been deprecated and its functionality has been integrated into the Node Tuning Operator. **OpenShift 4.20** (our target version) fully implements this modernized architecture:
 
 * **Performance Profiles** are now managed directly by the Node Tuning Operator
 * **No separate installation** required for performance profile functionality
@@ -146,7 +146,7 @@ OpenShift performance tuning features are managed through various Operators. **I
 * **Better integration** between system tuning and performance profiles
 * **Mature implementation** with enhanced stability and features
 
-Reference: https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.19 Low Latency Tuning Documentation^]
+Reference: https://docs.openshift.io/container-platform/4.20/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.20 Low Latency Tuning Documentation^]
 ====
 
 .*Benefits of Operator-Based Management*
@@ -176,26 +176,26 @@ In this module, you have:
 ✅ *Explored* OpenShift's capabilities for high-performance workloads +
 ✅ *Identified* the sources of latency in containerized environments +
 ✅ *Discovered* how Kubernetes Operators automate performance management +
-✅ *Updated Knowledge* of OpenShift 4.19 performance operator architecture changes
+✅ *Updated Knowledge* of OpenShift 4.20 performance operator architecture changes
 
 .*Key Takeaways*
 * Low-latency computing is essential for financial, telecom, and real-time applications
 * OpenShift can achieve bare-metal performance characteristics with proper tuning
-* **OpenShift 4.19** has a mature, simplified performance operator architecture
+* **OpenShift 4.20** has a mature, simplified performance operator architecture
 * **Node Tuning Operator** now handles both TuneD profiles and Performance Profiles
 * **Performance Addon Operator** is deprecated - its functionality is now built-in
 * Kubernetes Operators enable declarative, automated performance management
 
 == External References
 
-.*OpenShift 4.19 Performance Documentation*
-* https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.19 Low Latency Tuning Guide^] - Official documentation for current performance tuning
-* https://docs.openshift.io/container-platform/4.19/scalability_and_performance/what-huge-pages-do-and-how-they-are-consumed-by-apps.html[HugePages Configuration^] - Memory optimization guide
-* https://docs.openshift.io/container-platform/4.19/networking/hardware_networks/about-sriov.html[SR-IOV Networking^] - High-performance networking documentation
+.*OpenShift 4.20 Performance Documentation*
+* https://docs.openshift.io/container-platform/4.20/scalability_and_performance/cnf-low-latency-tuning.html[OpenShift 4.20 Low Latency Tuning Guide^] - Official documentation for current performance tuning
+* https://docs.openshift.io/container-platform/4.20/scalability_and_performance/what-huge-pages-do-and-how-they-are-consumed-by-apps.html[HugePages Configuration^] - Memory optimization guide
+* https://docs.openshift.io/container-platform/4.20/networking/hardware_networks/about-sriov.html[SR-IOV Networking^] - High-performance networking documentation
 
-.*Performance Operator Architecture (4.19)*
-* https://docs.openshift.io/container-platform/4.19/nodes/nodes/nodes-node-tuning-operator.html[Node Tuning Operator^] - Built-in performance management
-* https://docs.openshift.io/container-platform/4.19/scalability_and_performance/cnf-creating-performance-profiles.html[Creating Performance Profiles^] - CPU isolation and real-time configuration
+.*Performance Operator Architecture (4.20)*
+* https://docs.openshift.io/container-platform/4.20/nodes/nodes/nodes-node-tuning-operator.html[Node Tuning Operator^] - Built-in performance management
+* https://docs.openshift.io/container-platform/4.20/scalability_and_performance/cnf-creating-performance-profiles.html[Creating Performance Profiles^] - CPU isolation and real-time configuration
 * https://github.com/openshift/cluster-node-tuning-operator[Node Tuning Operator Source^] - GitHub repository
 
 .*Real-World Case Studies*
@@ -221,6 +221,6 @@ Ready to start? Begin with Module 1 to understand the fundamentals, then progres
 4. **Core Optimization**: Module 4 - Performance Tuning
 
 .*Additional Resources:*
-* https://docs.openshift.io/container-platform/4.19/scalability_and_performance/[OpenShift Performance Documentation^]
+* https://docs.openshift.io/container-platform/4.20/scalability_and_performance/[OpenShift Performance Documentation^]
 * https://github.com/cloud-bulldozer/kube-burner[Kube-burner Performance Testing^]
 * https://docs.openshift.com/container-platform/latest/virt/about-virt.html[OpenShift Virtualization Documentation^]

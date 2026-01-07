@@ -3,7 +3,7 @@
 [%hardbreaks]
 == Introduction
 
-Welcome to the comprehensive OpenShift Low-Latency Performance Workshop! This hands-on workshop will guide you through implementing high-performance, low-latency workloads on OpenShift 4.19 using enterprise-grade tuning techniques.
+Welcome to the comprehensive OpenShift Low-Latency Performance Workshop! This hands-on workshop will guide you through implementing high-performance, low-latency workloads on OpenShift 4.20 using enterprise-grade tuning techniques.
 
 This workshop demonstrates real-world scenarios where microsecond-level latency matters, including financial trading systems, real-time gaming, IoT edge computing, and high-frequency data processing applications.
 
@@ -43,7 +43,7 @@ These are the *key modules* that will be covered:
 
 ## Workshop Technologies
 
-This workshop leverages several OpenShift 4.19 enterprise features:
+This workshop leverages several OpenShift 4.20 enterprise features:
 
 * **Node Tuning Operator**: Built-in operator for automated node tuning and Performance Profiles
 * **SR-IOV Network Operator**: High-performance networking with direct hardware access
@@ -74,14 +74,14 @@ Ready to start? Begin with Module 1 to understand the fundamentals, then progres
 4. **Core Optimization**: xref:module-04-core-performance-tuning.adoc[Module 4 - Performance Tuning]
 
 **Additional Resources:**
-* link:https://docs.openshift.com/container-platform/4.19/scalability_and_performance/what-huge-pages-do-and-how-they-are-consumed-by-apps.html[OpenShift Performance Documentation^]
+* link:https://docs.openshift.com/container-platform/4.20/scalability_and_performance/what-huge-pages-do-and-how-they-are-consumed-by-apps.html[OpenShift Performance Documentation^]
 * link:https://github.com/cloud-bulldozer/kube-burner[Kube-burner Performance Testing^]
 * link:https://docs.openshift.com/container-platform/latest/virt/about-virt.html[OpenShift Virtualization Documentation^]
 
 == Requirements for the Lab Environment
 
 **Prerequisites:**
-* Single Node OpenShift (SNO) 4.19+ cluster with cluster-admin privileges
+* Single Node OpenShift (SNO) 4.20+ cluster with cluster-admin privileges
 * SSH access to bastion host (pre-configured)
 * Terminal access with `oc` CLI configured (pre-configured on bastion)
 * Basic understanding of Kubernetes/OpenShift concepts
