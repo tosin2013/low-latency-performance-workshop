@@ -1,6 +1,6 @@
 ---
 site:
-  title: "Low-Latency Performance Workshop for OpenShift 4.19 - WIP"
+  title: "Low-Latency Performance Workshop for OpenShift"
   # url: https://redhat-scholars.github.io/course-template
   start_page: modules::index.adoc
 
