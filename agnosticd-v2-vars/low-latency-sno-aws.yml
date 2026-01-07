@@ -113,21 +113,19 @@ ocp4_workload_showroom_content_path: content
 ocp4_workload_showroom_namespace: low-latency-workshop
 ocp4_workload_showroom_name: workshop-docs
 
-# Workshop-specific attributes (passed to Antora)
-ocp4_workload_showroom_antora_attributes:
-  guid: "{{ guid }}"
-  student_name: "{{ guid }}"
-  ssh_user: lab-user
-  ssh_password: "{{ student_password | default('See provision-user-info.yaml') }}"
-  subdomain: "{{ base_domain }}"
-  bastion_host: "bastion.{{ guid }}.{{ base_domain }}"
-  cluster_api: "https://api.ocp.{{ guid }}.{{ base_domain }}:6443"
-  cluster_console: "https://console-openshift-console.apps.ocp.{{ guid }}.{{ base_domain }}"
-  workshop_name: "Low-Latency Performance Workshop"
-  openshift_version: "{{ host_ocp4_installer_version }}"
+# Showroom Workload Configuration
+# NOTE: Variable names in documentation must match AgnosticD user_data keys:
+#   - bastion_public_hostname
+#   - bastion_ssh_user_name  
+#   - bastion_ssh_password
+#   - openshift_api_url
+#   - openshift_console_url
+# These are automatically set by the bastion role and passed to Showroom
 
-# Showroom UI customization (optional)
+# Showroom UI customization
 ocp4_workload_showroom_lab_name: "Low-Latency Performance Workshop"
-ocp4_workload_showroom_ssh_user: lab-user
-ocp4_workload_showroom_ssh_password: "{{ student_password | default('') }}"
+
+# Use wetty terminal with auto-SSH to bastion (password from user_data)
+ocp4_workload_showroom_terminal_type: wetty
+ocp4_workload_showroom_wetty_ssh_bastion_login: true
 

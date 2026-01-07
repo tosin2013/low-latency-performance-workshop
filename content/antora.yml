@@ -14,17 +14,20 @@ asciidoc:
     workshop_name: Low-Latency Performance Workshop
     openshift_version: 4.19
     kube_burner_version: 1.17+
+    # These defaults match what AgnosticD/Showroom provides in user_data
     guid: student1
     student_name: student1
-    subdomain: sandbox5466.opentlc.com
+    # Bastion access - variable names match AgnosticD user_data
+    bastion_public_hostname: bastion.student1.sandbox5466.opentlc.com
+    bastion_ssh_user_name: lab-user
+    bastion_ssh_password: "Provided by workshop administrator"
+    # OpenShift access - variable names match AgnosticD user_data
+    openshift_api_url: https://api.ocp.student1.sandbox5466.opentlc.com:6443
+    openshift_console_url: https://console-openshift-console.apps.ocp.student1.sandbox5466.opentlc.com
+    openshift_cluster_ingress_domain: apps.ocp.student1.sandbox5466.opentlc.com
+    # Dev Spaces (optional)
     devspaces_url: https://devspaces.apps.example.sandbox.opentlc.com
     devspaces_factory: https://devspaces.apps.example.sandbox.opentlc.com/dashboard/#/load-factory?url=https://github.com/tosin2013/low-latency-performance-workshop
-    ssh_user: lab-user
-    ssh_password: "Provided by workshop administrator"
-    bastion_host: bastion.student1.sandbox5466.opentlc.com
-    ssh_command: ssh lab-user@bastion.{guid}.{subdomain}
-    cluster_api: https://api.ocp.student1.sandbox5466.opentlc.com:6443
-    cluster_console: https://console-openshift-console.apps.ocp.student1.sandbox5466.opentlc.com
     infractl: oc
     management_cli: oc
   page-links:

@@ -10,16 +10,16 @@ The easiest way to work with your SNO cluster is via SSH to the bastion host. Th
 
 [cols="1,2"]
 |===
-| SSH Host | `{bastion_host}`
-| Username | `{ssh_user}`
-| Password | `{ssh_password}`
+| SSH Host | `{bastion_public_hostname}`
+| Username | `{bastion_ssh_user_name}`
+| Password | `{bastion_ssh_password}`
 |===
 
 *Connect to your bastion:*
 
 [source,bash,role=execute,subs="attributes"]
 ----
-ssh {ssh_user}@{bastion_host}
+ssh {bastion_ssh_user_name}@{bastion_public_hostname}
 ----
 
 Once connected, you can immediately run cluster commands - no additional login required:
@@ -42,8 +42,8 @@ If you prefer direct cluster access (e.g., from your local machine), use these c
 
 [cols="1,2"]
 |===
-| API URL | `{cluster_api}`
-| Console | `{cluster_console}`
+| API URL | `{openshift_api_url}`
+| Console | `{openshift_console_url}`
 | Username | `kubeadmin`
 | Password | Available on bastion at `~/ocp/auth/kubeadmin-password`
 |===
@@ -51,7 +51,7 @@ If you prefer direct cluster access (e.g., from your local machine), use these c
 [source,bash,role=execute,subs="attributes"]
 ----
 # Direct login (from your local machine)
-oc login {cluster_api} -u kubeadmin -p <password>
+oc login {openshift_api_url} -u kubeadmin -p <password>
 ----
 
 The kubeadmin password is available on the bastion at `~/ocp/auth/kubeadmin-password`.
