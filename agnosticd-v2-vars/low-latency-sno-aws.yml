@@ -117,16 +117,17 @@ ocp4_workload_showroom_name: workshop-docs
 ocp4_workload_showroom_antora_attributes:
   guid: "{{ guid }}"
   student_name: "{{ guid }}"
-  username: lab-user
+  ssh_user: lab-user
+  ssh_password: "{{ student_password | default('See provision-user-info.yaml') }}"
   subdomain: "{{ base_domain }}"
   bastion_host: "bastion.{{ guid }}.{{ base_domain }}"
-  cluster_api: "https://api.{{ cluster_name }}.{{ base_domain }}:6443"
-  cluster_console: "https://console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}"
+  cluster_api: "https://api.ocp.{{ guid }}.{{ base_domain }}:6443"
+  cluster_console: "https://console-openshift-console.apps.ocp.{{ guid }}.{{ base_domain }}"
   workshop_name: "Low-Latency Performance Workshop"
   openshift_version: "{{ host_ocp4_installer_version }}"
 
 # Showroom UI customization (optional)
 ocp4_workload_showroom_lab_name: "Low-Latency Performance Workshop"
 ocp4_workload_showroom_ssh_user: lab-user
-ocp4_workload_showroom_ssh_password: ""  # Uses SSH key
+ocp4_workload_showroom_ssh_password: "{{ student_password | default('') }}"
 

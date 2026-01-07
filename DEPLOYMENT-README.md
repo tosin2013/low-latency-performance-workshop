@@ -20,6 +20,18 @@ A hands-on workshop for understanding and optimizing low-latency workloads on Op
 
 **Simplified deployment using AgnosticD V2 - no hub cluster required!**
 
+### Prerequisites
+
+Before deploying, ensure you have:
+
+| Requirement | Details |
+|-------------|---------|
+| Podman | For running the execution environment |
+| ansible-navigator | For running Ansible playbooks |
+| Git | For cloning repositories |
+| AWS Sandbox | From demo.redhat.com or RHPDS |
+| OpenShift Pull Secret | From console.redhat.com |
+
 ### Quick Setup
 
 ```bash
@@ -27,6 +39,29 @@ A hands-on workshop for understanding and optimizing low-latency workloads on Op
 cd ~/Development/low-latency-performance-workshop
 ./scripts/workshop-setup.sh
 ```
+
+### Install Required Ansible Collections
+
+The AgnosticD v2 deployment requires additional Ansible collections that must be installed before running the provisioner:
+
+```bash
+# Navigate to the agnosticd-v2 directory
+cd ~/Development/agnosticd-v2
+
+# Install the AWS cloud provider collection (required for infrastructure)
+ansible-galaxy collection install git+https://github.com/agnosticd/cloud_provider_aws.git \
+  -p ansible/collections
+
+# Install the core workloads collection (required for operators and Showroom)
+ansible-galaxy collection install git+https://github.com/agnosticd/core_workloads.git \
+  -p ansible/collections
+
+# Verify installation
+ls ansible/collections/ansible_collections/agnosticd/
+# Expected output: cloud_provider_aws  core  core_workloads
+```
+
+> **Note**: These collections are NOT on Ansible Galaxy and must be installed from GitHub.
 
 ### Configure Secrets
 
@@ -146,20 +181,48 @@ control_plane_instance_type: m5.metal  # or m5.8xlarge for testing
 
 ## User Access Information
 
-After deployment, the user will have access to:
+After deployment, users receive access via `provision-user-info.yaml`:
 
 ```
 ═══════════════════════════════════════════════════════════════
   LOW-LATENCY PERFORMANCE WORKSHOP
 ═══════════════════════════════════════════════════════════════
 
-  SNO Console: https://console-openshift-console.apps.<cluster-domain>
+  Bastion SSH: ssh lab-user@bastion.<guid>.<subdomain>
+  Password: <generated-password>
 
-  Showroom Docs: https://showroom.<cluster-domain>
+  SNO Console: https://console-openshift-console.apps.ocp.<guid>.<subdomain>
+  API: https://api.ocp.<guid>.<subdomain>:6443
 
-  Bastion SSH: ssh ec2-user@bastion.<cluster-domain>
+  Showroom Docs: https://workshop-docs-low-latency-workshop.apps.ocp.<guid>.<subdomain>
 
 ═══════════════════════════════════════════════════════════════
+```
+
+### Bastion Access (Recommended)
+
+The bastion host has `oc`, `kubectl`, and KUBECONFIG pre-configured:
+
+```bash
+# SSH to bastion (password provided in provision-user-info.yaml)
+ssh lab-user@bastion.student1.sandbox1234.opentlc.com
+
+# Once connected, run commands directly - no additional login needed
+oc get nodes
+oc whoami  # Returns: system:admin
+```
+
+### Administrator Access
+
+Administrators can also use SSH keys via `ec2-user`:
+
+```bash
+# Using the generated SSH key
+ssh -i ~/Development/agnosticd-v2-output/student1/ssh_provision_student1 \
+  ec2-user@bastion.student1.sandbox1234.opentlc.com
+
+# kubeadmin password location on bastion
+cat ~/ocp/auth/kubeadmin-password
 ```
 
 ---
@@ -254,6 +317,42 @@ ls -la ~/Development/agnosticd-v2-output/student1/
 | Deployment fails | Check AWS credentials in secrets.yml |
 | Cluster not accessible | Verify security groups and bastion connectivity |
 | Operators not installing | Check workload configuration in agnosticd-v2-vars |
+| `role 'agnosticd.cloud_provider_aws.*' was not found` | Install the AWS collection - see "Install Required Ansible Collections" above |
+| `role 'agnosticd.core_workloads.*' was not found` | Install the core_workloads collection - see above |
+| `manifest unknown` for execution environment | Update `ansible-navigator.yml` image tag to `quay.io/agnosticd/ee-multicloud:latest` |
+| `Unable to retrieve file secrets-sandboxXXX.opentlc.com.yml` | Use just the sandbox number: `-a sandbox1234` not `-a sandbox1234.opentlc.com` |
+
+### Manual Collection Installation (if workshop-setup.sh fails)
+
+If you encounter missing collection errors during deployment, manually install:
+
+```bash
+cd ~/Development/agnosticd-v2
+
+# Cloud Provider AWS (for infrastructure)
+ansible-galaxy collection install \
+  git+https://github.com/agnosticd/cloud_provider_aws.git \
+  -p ansible/collections
+
+# Core Workloads (for Cert Manager, OpenShift Virt, Showroom)
+ansible-galaxy collection install \
+  git+https://github.com/agnosticd/core_workloads.git \
+  -p ansible/collections
+```
+
+### Direct Provisioning Command
+
+If the deploy script has issues, you can run the provisioner directly:
+
+```bash
+cd ~/Development/agnosticd-v2
+./bin/agd provision -g student1 -c low-latency-sno-aws -a sandbox1234
+```
+
+Arguments:
+- `-g student1` - GUID/username for the deployment
+- `-c low-latency-sno-aws` - Configuration file (from agnosticd-v2-vars/)
+- `-a sandbox1234` - Account/sandbox number (NOT the full domain)
 
 ---
 

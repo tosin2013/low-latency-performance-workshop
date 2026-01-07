@@ -4,33 +4,57 @@
 
 [IMPORTANT]
 ====
-*Quick Start: Login to Your SNO Cluster*
+*🚀 Quick Start: SSH to Your Bastion Host (Recommended)*
 
-Your SNO cluster has a pre-configured user account with cluster-admin permissions:
+The easiest way to work with your SNO cluster is via SSH to the bastion host. The bastion has `oc`, `kubectl`, and KUBECONFIG pre-configured:
 
 [cols="1,2"]
 |===
-| API URL | `https://api.workshop-{username}.{subdomain}:6443`
-| Console | `https://console-openshift-console.apps.workshop-{username}.{subdomain}`
-| Username | `{username}` (same as your hub username, e.g., `user1`)
-| Password | Provided by workshop administrator
+| SSH Host | `{bastion_host}`
+| Username | `{ssh_user}`
+| Password | `{ssh_password}`
 |===
 
-*Login to your SNO cluster (replace values for your environment):*
+*Connect to your bastion:*
+
+[source,bash,role=execute,subs="attributes"]
+----
+ssh {ssh_user}@{bastion_host}
+----
+
+Once connected, you can immediately run cluster commands - no additional login required:
 
 [source,bash,role=execute]
 ----
-# Replace <username>, <subdomain>, and <password> with your actual values
-oc login https://api.workshop-<username>.<subdomain>:6443 -u <username> -p <password>
+# Verify cluster access (already authenticated as system:admin)
+oc get nodes
+oc whoami
 ----
 
-Replace:
+TIP: The bastion has `oc`, `kubectl`, and your KUBECONFIG pre-configured. No additional setup needed!
+====
 
-* `<username>` with your assigned username (e.g., user1, user2, etc.)
-* `<subdomain>` with your cluster's subdomain (provided by admin, e.g., `abc123.sandbox.opentlc.com`)
-* `<password>` with the password provided by your administrator
+[NOTE]
+====
+*Alternative: Direct Cluster Access*
 
-TIP: Your workshop administrator will provide the specific subdomain and password for your environment.
+If you prefer direct cluster access (e.g., from your local machine), use these credentials:
+
+[cols="1,2"]
+|===
+| API URL | `{cluster_api}`
+| Console | `{cluster_console}`
+| Username | `kubeadmin`
+| Password | Available on bastion at `~/ocp/auth/kubeadmin-password`
+|===
+
+[source,bash,role=execute,subs="attributes"]
+----
+# Direct login (from your local machine)
+oc login {cluster_api} -u kubeadmin -p <password>
+----
+
+The kubeadmin password is available on the bastion at `~/ocp/auth/kubeadmin-password`.
 ====
 
 [TIP]

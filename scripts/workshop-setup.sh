@@ -299,7 +299,50 @@ print_info "Running: ./bin/agd setup"
 print_success "AgnosticD V2 setup completed"
 
 # -------------------------------------------------------------------
-# 7. Interactive Configuration (Optional)
+# 7. Install Required Ansible Collections
+# -------------------------------------------------------------------
+
+print_section "Installing Required Ansible Collections"
+
+COLLECTIONS_PATH="${AGNOSTICD_DIR}/ansible/collections"
+
+# Install agnosticd.cloud_provider_aws collection
+if [[ ! -d "${COLLECTIONS_PATH}/ansible_collections/agnosticd/cloud_provider_aws" ]]; then
+  print_info "Installing agnosticd.cloud_provider_aws collection from GitHub..."
+  ansible-galaxy collection install git+https://github.com/agnosticd/cloud_provider_aws.git \
+    -p "${COLLECTIONS_PATH}" 2>&1 || {
+    print_warning "Failed to install cloud_provider_aws collection"
+    print_info "You may need to install it manually before deployment"
+  }
+  print_success "cloud_provider_aws collection installed"
+else
+  print_success "cloud_provider_aws collection already installed"
+fi
+
+# Install agnosticd.core_workloads collection
+if [[ ! -d "${COLLECTIONS_PATH}/ansible_collections/agnosticd/core_workloads" ]]; then
+  print_info "Installing agnosticd.core_workloads collection from GitHub..."
+  ansible-galaxy collection install git+https://github.com/agnosticd/core_workloads.git \
+    -p "${COLLECTIONS_PATH}" 2>&1 || {
+    print_warning "Failed to install core_workloads collection"
+    print_info "You may need to install it manually before deployment"
+  }
+  print_success "core_workloads collection installed"
+else
+  print_success "core_workloads collection already installed"
+fi
+
+# Verify collections
+print_info "Verifying installed collections..."
+if ls "${COLLECTIONS_PATH}/ansible_collections/agnosticd/" 2>/dev/null | grep -q "cloud_provider_aws\|core_workloads"; then
+  print_success "Required collections are installed:"
+  ls -1 "${COLLECTIONS_PATH}/ansible_collections/agnosticd/" 2>/dev/null | sed 's/^/  - /'
+else
+  print_warning "Some collections may be missing. Check the output above."
+fi
+
+# -------------------------------------------------------------------
+# 8. Interactive Configuration (Optional)
 # -------------------------------------------------------------------
 
 if [[ "$INTERACTIVE" == "true" ]]; then
