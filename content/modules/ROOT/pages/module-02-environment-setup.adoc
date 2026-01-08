@@ -45,9 +45,7 @@ This module helps you verify that your Single Node OpenShift (SNO) cluster is pr
 Your Single Node OpenShift (SNO) cluster has been automatically provisioned with:
 
 * ✅ **OpenShift Virtualization** - Deployed and configured
-* ✅ **SR-IOV Network Operator** - Deployed and configured
 * ✅ **Node Tuning Operator** - Built-in (OpenShift 4.11+)
-* ✅ **Cert Manager** - For certificate management
 * ✅ **Showroom** - Workshop documentation site
 
 This module teaches you how to **verify** these components and understand their purpose for the workshop exercises.
@@ -167,7 +165,7 @@ NAME                                      DISPLAY                    VERSION   P
 kubevirt-hyperconverged-operator.v4.x.x   OpenShift Virtualization   4.x.x     Succeeded
 ----
 
-. Verify SR-IOV Network Operator is installed:
+. To verify SR-IOV Network Operator is installed run the command below. *Currently not installed on this cluster*:
 +
 [source,bash,role=execute]
 ----
@@ -203,12 +201,6 @@ oc get hyperconverged -n openshift-cnv
 oc get hyperconverged -n openshift-cnv -o jsonpath='{.items[0].status.conditions}' | jq
 ----
 
-. Verify Cert Manager (for certificate management):
-+
-[source,bash,role=execute]
-----
-oc get csv -n openshift-cert-manager | grep cert-manager
-----
 
 [NOTE]
 ====
@@ -219,9 +211,7 @@ If any operator is not yet ready, wait a few minutes - the provisioning script d
 **What was deployed automatically:**
 
 * **OpenShift Virtualization**: Namespace `openshift-cnv`, Subscription, OperatorGroup, HyperConverged instance
-* **SR-IOV Network Operator**: Namespace `openshift-sriov-network-operator`, Subscription, OperatorGroup
 * **Node Tuning Operator**: Built-in to OpenShift (no installation needed)
-* **Cert Manager**: For managing TLS certificates
 ====
 
 === Step 4: Understanding the Performance Operator Architecture
@@ -236,17 +226,10 @@ Your SNO cluster includes these pre-configured components:
 | Manages TuneD profiles AND Performance Profiles. Handles CPU isolation, real-time kernels, and system-level tuning. Built-in since OpenShift 4.11+
 | Built-in ✅
 
-| *SR-IOV Network Operator*
-| Provides high-performance networking with direct hardware access for low-latency applications
-| Pre-installed ✅
-
 | *OpenShift Virtualization*
 | Enables running VMs with performance optimizations for low-latency virtualization scenarios
 | Pre-installed ✅
 
-| *Cert Manager*
-| Manages TLS certificates for secure communication
-| Pre-installed ✅
 |===
 
 === Step 5: Final Verification
@@ -269,14 +252,9 @@ oc get pods -n openshift-cluster-node-tuning-operator
 +
 [source,bash,role=execute]
 ----
-# SR-IOV Network Operator
-oc get csv -n openshift-sriov-network-operator
-
 # OpenShift Virtualization
 oc get csv -n openshift-cnv
 
-# Cert Manager
-oc get csv -n openshift-cert-manager | grep cert-manager
 ----
 
 . Check all operator pods are running:
@@ -287,7 +265,6 @@ oc get csv -n openshift-cert-manager | grep cert-manager
 oc get pods -n openshift-cnv --field-selector=status.phase=Running
 oc get pods -n openshift-sriov-network-operator --field-selector=status.phase=Running
 oc get pods -n openshift-cluster-node-tuning-operator --field-selector=status.phase=Running
-oc get pods -n openshift-cert-manager --field-selector=status.phase=Running
 ----
 
 [TIP]
@@ -297,7 +274,6 @@ oc get pods -n openshift-cert-manager --field-selector=status.phase=Running
 * ✅ Node Tuning Operator: TuneD pods running, PerformanceProfile CRD available
 * ✅ SR-IOV Network Operator: CSV in "Succeeded" phase
 * ✅ OpenShift Virtualization: CSV in "Succeeded" phase, HyperConverged instance ready
-* ✅ Cert Manager: CSV in "Succeeded" phase
 
 If any operator is not ready, wait 5-10 minutes for initialization to complete.
 ====
@@ -365,7 +341,7 @@ oc get route -n low-latency-workshop
 In this module, you have:
 
 ✅ *Verified* your SNO cluster connectivity and access +
-✅ *Confirmed* pre-installed operators (OpenShift Virtualization, SR-IOV, Cert Manager) are running +
+✅ *Confirmed* pre-installed operators (OpenShift Virtualization, SR-IOV) are running +
 ✅ *Verified* built-in Node Tuning Operator for Performance Profile management +
 ✅ *Understood* the purpose of each operator for low-latency workloads +
 ✅ *Prepared* for baseline testing and performance tuning
@@ -381,7 +357,6 @@ In this module, you have:
 * ✅ OpenShift Virtualization operator deployed and configured
 * ✅ SR-IOV Network Operator installed for high-performance networking
 * ✅ Built-in Node Tuning Operator ready for Performance Profile management
-* ✅ Cert Manager for certificate management
 * ✅ Showroom documentation site deployed
 * ✅ Environment ready for baseline testing and performance tuning
 
