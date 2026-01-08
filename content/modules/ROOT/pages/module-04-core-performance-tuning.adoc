@@ -176,57 +176,15 @@ Then retry the Performance Profile creation.
 
 The Performance Profile will trigger a rolling update of your nodes. This process includes installing the real-time kernel and applying all the specified optimizations. The monitoring approach varies by cluster architecture.
 
-. Monitor Machine Config Pool status based on cluster type:
+. Monitor Machine Config Pool status:
 +
 [source,bash,role=execute]
 ----
-# Load cluster configuration
-source /tmp/cluster-config
-
-echo "=== Monitoring Performance Profile Application ==="
-echo "Cluster type: $CLUSTER_TYPE"
-echo "Profile name: $PROFILE_NAME"
-echo "Target node: $TARGET_NODE"
-
-if [ "$CLUSTER_TYPE" = "SNO" ]; then
-    echo ""
-    echo "🔍 SNO Monitoring Strategy:"
-    echo "   - Monitor 'master' Machine Config Pool"
-    echo "   - Single node will reboot (cluster temporarily unavailable)"
-    echo "   - Expect 5-15 minutes for RT kernel installation"
-    echo ""
-    echo "📊 Current master MCP status:"
-    oc get mcp master
-    echo ""
-    echo "⏱️  Starting continuous monitoring (Ctrl+C to stop):"
-    echo "watch 'oc get mcp master; echo; oc get nodes'"
-
-elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
-    echo ""
-    echo "🔍 Multi-Node Monitoring Strategy:"
-    echo "   - Monitor 'worker-rt' Machine Config Pool"
-    echo "   - Worker nodes will reboot sequentially"
-    echo "   - Control plane remains available"
-    echo ""
-    echo "📊 Current worker-rt MCP status:"
-    oc get mcp worker-rt
-    echo ""
-    echo "⏱️  Starting continuous monitoring (Ctrl+C to stop):"
-    echo "watch 'oc get mcp worker-rt; echo; oc get nodes'"
-
-else
-    echo ""
-    echo "🔍 Multi-Master Monitoring Strategy:"
-    echo "   - Monitor 'master-rt' Machine Config Pool"
-    echo "   - Master nodes will reboot sequentially"
-    echo "   - Cluster maintains quorum during updates"
-    echo ""
-    echo "📊 Current master-rt MCP status:"
-    oc get mcp master-rt
-    echo ""
-    echo "⏱️  Starting continuous monitoring (Ctrl+C to stop):"
-    echo "watch 'oc get mcp master-rt; echo; oc get nodes'"
-fi
+echo "📊 Current master MCP status:"
+oc get mcp master
+echo ""
+echo "⏱️  Starting continuous monitoring (Ctrl+C to stop):"
+echo "watch 'oc get mcp master; echo; oc get nodes'"
 ----
 
 . Monitor node updates in detail:
@@ -248,13 +206,7 @@ oc get events --sort-by='.lastTimestamp' --field-selector involvedObject.name=$T
 
 echo ""
 echo "📋 Machine Config Status:"
-if [ "$CLUSTER_TYPE" = "SNO" ]; then
-    oc describe mcp master | grep -A 10 -B 5 "Conditions:"
-elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
-    oc describe mcp worker-rt | grep -A 10 -B 5 "Conditions:"
-else
-    oc describe mcp master-rt | grep -A 10 -B 5 "Conditions:"
-fi
+oc describe mcp master | grep -A 10 -B 5 "Conditions:"
 ----
 
 . Wait for the update to complete:
@@ -267,48 +219,18 @@ source /tmp/cluster-config
 echo "=== Waiting for Performance Profile Application ==="
 echo "This process may take 10-20 minutes depending on your environment"
 
-if [ "$CLUSTER_TYPE" = "SNO" ]; then
-    echo ""
-    echo "⏳ SNO Update Process:"
-    echo "   1. Machine config generation"
-    echo "   2. Node cordoning and draining"
-    echo "   3. RT kernel installation and reboot"
-    echo "   4. Node rejoin and ready state"
-    echo ""
-    echo "🔄 Waiting for master MCP to be updated..."
-    oc wait --for=condition=Updated mcp/master --timeout=1200s
+echo ""
+echo "⏳ SNO Update Process:"
+echo "   1. Machine config generation"
+echo "   2. Node cordoning and draining"
+echo "   3. RT kernel installation and reboot"
+echo "   4. Node rejoin and ready state"
+echo ""
+echo "🔄 Waiting for master MCP to be updated..."
+oc wait --for=condition=Updated mcp/master --timeout=1200s
 
-    echo "🔄 Waiting for node to be ready after reboot..."
-    oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
-
-elif [ "$CLUSTER_TYPE" = "MULTI_NODE" ]; then
-    echo ""
-    echo "⏳ Multi-Node Update Process:"
-    echo "   1. Worker-RT MCP configuration"
-    echo "   2. Sequential worker node updates"
-    echo "   3. RT kernel installation per node"
-    echo "   4. Node rejoin and ready state"
-    echo ""
-    echo "🔄 Waiting for worker-rt MCP to be updated..."
-    oc wait --for=condition=Updated mcp/worker-rt --timeout=1200s
-
-    echo "🔄 Waiting for target node to be ready..."
-    oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
-
-else
-    echo ""
-    echo "⏳ Multi-Master Update Process:"
-    echo "   1. Master-RT MCP configuration"
-    echo "   2. Sequential master node updates"
-    echo "   3. RT kernel installation per node"
-    echo "   4. Node rejoin and ready state"
-    echo ""
-    echo "🔄 Waiting for master-rt MCP to be updated..."
-    oc wait --for=condition=Updated mcp/master-rt --timeout=1200s
-
-    echo "🔄 Waiting for target node to be ready..."
-    oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
-fi
+echo "🔄 Waiting for node to be ready after reboot..."
+oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
 
 echo ""
 echo "✅ Performance Profile application completed!"
