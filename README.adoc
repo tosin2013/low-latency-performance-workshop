@@ -1,14 +1,14 @@
-= Low-Latency Performance Workshop for OpenShift 4.19
+= Low-Latency Performance Workshop for OpenShift 4.20
 
 == Introduction
 
-This repository hosts the comprehensive lab guide for the **Low-Latency Performance Workshop**, designed to teach OpenShift 4.19 performance optimization through hands-on exercises using modern tooling and GitOps practices.
+This repository hosts the comprehensive lab guide for the **Low-Latency Performance Workshop**, designed to teach OpenShift 4.20 performance optimization through hands-on exercises using modern tooling and GitOps practices.
 
 The workshop can be delivered by Red Hat Associates, partners, and community members to customers and interested parties worldwide.
 
 It is designed to work with the Showroom lab environment provided by the Red Hat Demo Platform (RHDP) team, as well as customer environments and self-paced learning scenarios.
 
-This workshop provides hands-on experience with **low-latency performance optimization** in OpenShift 4.19, covering everything from baseline performance testing to advanced virtualization optimization.
+This workshop provides hands-on experience with **low-latency performance optimization** in OpenShift 4.20, covering everything from baseline performance testing to advanced virtualization optimization.
 
 **Low-latency performance optimization** enables organizations to achieve deterministic, predictable performance for time-sensitive workloads such as financial trading systems, industrial automation, telecommunications, and real-time analytics.
 
@@ -25,11 +25,11 @@ In this workshop, participants will explore comprehensive performance optimizati
 **Solutions Architects** -- Those designing OpenShift solutions for performance-sensitive use cases. These users need to understand the trade-offs and capabilities of different performance optimization approaches.
 == What Content Is Covered In The Workshop?
 
-The workshop consists of **6 comprehensive modules** that build upon each other to provide complete low-latency performance optimization expertise:
+The workshop consists of **8 comprehensive modules** that build upon each other to provide complete low-latency performance optimization expertise:
 
-**Module 1: Low-Latency Performance Fundamentals** -- Introduction to low-latency concepts, OpenShift 4.19 performance features, workshop architecture, and prerequisites. Participants learn the theoretical foundation and prepare their environment.
+**Module 1: Low-Latency Performance Fundamentals** -- Introduction to low-latency concepts, OpenShift 4.20 performance features, workshop architecture, and prerequisites. Participants learn the theoretical foundation and prepare their environment.
 
-**Module 2: RHACM and ArgoCD Integration Setup** -- Hands-on setup of Red Hat Advanced Cluster Management and GitOps workflows using ArgoCD. Participants deploy OpenShift Virtualization and SR-IOV operators using modern GitOps practices.
+**Module 2: Environment Setup and Verification** -- Hands-on verification of the pre-configured Single Node OpenShift (SNO) environment. Participants verify installed operators (OpenShift Virtualization, SR-IOV, Node Tuning Operator) and understand their purpose.
 
 **Module 3: Baseline Performance Testing** -- Comprehensive performance baseline establishment using kube-burner v1.17+. Participants learn modern performance testing methodologies and establish measurable baselines for optimization comparison.
 
@@ -38,16 +38,19 @@ The workshop consists of **6 comprehensive modules** that build upon each other 
 **Module 5: Low-Latency Virtualization** -- Advanced virtual machine optimization using OpenShift Virtualization, including VMI latency testing, SR-IOV networking, and network policy performance analysis. Participants optimize VMs for low-latency workloads.
 
 **Module 6: Monitoring and Validation** -- Production-ready monitoring setup with Prometheus and Grafana, comprehensive performance validation across all optimization types, and continuous performance testing implementation. Participants establish sustainable performance assurance practices.
+
+**Module 7: GPU Workloads (Optional)** -- Advanced module covering GPU Operator installation, GPU-enabled workload deployment, and GPU performance testing on OpenShift.
+
+**Module 8: Workshop Conclusion and Next Steps** -- Summary of key learnings, best practices, troubleshooting guidance, and recommendations for further exploration.
 == Technology Stack and Version Information
 
 This edition of the **Low-Latency Performance Workshop** has been developed and tested with the following software versions:
 
-* **OpenShift Container Platform**: 4.19+
-* **Red Hat Advanced Cluster Management (RHACM)**: 2.10+
-* **OpenShift GitOps (ArgoCD)**: 1.12+
-* **OpenShift Virtualization**: 4.19+
-* **SR-IOV Network Operator**: 4.19+
-* **Node Tuning Operator**: Built-in to OpenShift 4.19+
+* **OpenShift Container Platform**: 4.20+
+* **OpenShift Virtualization**: 4.20+
+* **SR-IOV Network Operator**: 4.20+
+* **Node Tuning Operator**: Built-in to OpenShift 4.20+
+* **Cert Manager**: 1.18+ (for SSL certificate management)
 * **kube-burner**: 1.17+ (performance testing tool)
 * **Prometheus**: 2.45+ (monitoring and metrics)
 * **Grafana**: 10.0+ (visualization and dashboards)
@@ -57,7 +60,7 @@ This edition of the **Low-Latency Performance Workshop** has been developed and 
 The workshop uses a **GitOps-first approach** with the following architecture:
 
 * **Hub Cluster**: RHACM and ArgoCD for multi-cluster management
-* **Target Clusters**: OpenShift 4.19 clusters with performance optimizations
+* **Target Clusters**: OpenShift 4.20 Single Node OpenShift (SNO) clusters with performance optimizations
 * **Performance Testing**: Modern kube-burner configurations with structured metrics
 * **Monitoring Stack**: Prometheus, Grafana, and Alertmanager integration
 * **Environment**: AWS-based with `*.dynamic.redhatworkshops.io` domain pattern
@@ -89,7 +92,8 @@ low-latency-performance-workshop/
 │   ├── workshop-setup.sh            # Full automated setup
 │   ├── deploy-sno.sh                # Deploy SNO cluster
 │   ├── destroy-sno.sh               # Destroy SNO cluster
-│   └── status-sno.sh                # Check cluster status
+│   ├── status-sno.sh                # Check cluster status
+│   └── delete-vpc.sh                # Idempotent VPC deletion script
 ├── gitops/                          # GitOps configurations
 │   ├── kube-burner-configs/         # Performance testing configs
 │   ├── openshift-virtualization/    # CNV deployment configs
@@ -230,6 +234,6 @@ This workshop content is provided under the Apache 2.0 license. See LICENSE file
 
 ---
 
-**Workshop Version**: OpenShift 4.19
-**Last Updated**: Septempber 2025
+**Workshop Version**: OpenShift 4.20
+**Last Updated**: January 2026
 **Maintained by**: Red Hat RTO
