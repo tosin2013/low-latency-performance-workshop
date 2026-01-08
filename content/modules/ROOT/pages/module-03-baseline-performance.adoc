@@ -75,11 +75,8 @@ The bastion host has `oc`, `kubectl`, and KUBECONFIG pre-configured. You should 
 # Confirm cluster identity
 oc cluster-info
 
-# Check you're not on the hub cluster
-oc get managedclusters 2>/dev/null || echo "✅ Connected to target cluster (not hub)"
-
 # Verify cluster version matches expectations
-oc version --short
+oc version 
 ----
 
 === Step 2: Verify Target Cluster Status
@@ -92,10 +89,13 @@ oc version --short
 oc get nodes
 
 # Verify installed operators from Module 2
-oc get csv --all-namespaces | grep -E "(sriov|kubevirt|virtualization)"
+oc get csv --all-namespaces | grep -E "(kubevirt|virtualization)"
 
 # Check built-in Node Tuning Operator
 oc get tuned -n openshift-cluster-node-tuning-operator
+
+# Check node resources
+oc describe nodes | grep -E "(Name:|cpu:|memory:|Capacity|Allocatable)"
 ----
 
 [[what-is-low-latency]]
@@ -122,96 +122,15 @@ Low-latency performance is essential for:
 
 Now that you're connected to your SNO cluster, let's verify it meets the requirements for performance testing and has the components installed from Module 2.
 
-. Verify cluster access and basic information:
-+
-[source,bash,role=execute]
-----
-# Confirm cluster-admin access on target cluster
-oc auth can-i '*' '*'
-
-# Check OpenShift version (should be 4.11+ for modern performance features)
-oc get clusterversion
-
-# Get cluster name and basic info
-oc cluster-info | head -3
-----
-
-. Review the cluster nodes and their specifications:
-+
-[source,bash,role=execute]
-----
-# List all nodes with detailed information
-oc get nodes -o wide
-
-# Check node resources
-oc describe nodes | grep -E "(Name:|cpu:|memory:|Capacity|Allocatable)"
-
-# Verify worker node count (Optional)
-oc get nodes --selector='node-role.kubernetes.io/worker' --no-headers | wc -l
-----
-
-. Confirm that operators from Module 2 are properly installed:
-+
-[source,bash,role=execute]
-----
-# Check built-in Node Tuning Operator (OpenShift 4.11+)
-oc get tuned -n openshift-cluster-node-tuning-operator
-
-# Verify SR-IOV Network Operator (if installed)
-oc get csv -n openshift-sriov-network-operator 2>/dev/null || echo "SR-IOV not installed (optional)"
-
-# Check OpenShift Virtualization (if installed)  
-oc get csv -n openshift-cnv 2>/dev/null || echo "OpenShift Virtualization not installed (optional)"
-
-# Verify Performance Profile CRD is available
-oc get crd performanceprofiles.performance.openshift.io
-----
 
 [[establishing-baseline]]
 == Establishing Baseline Performance Metrics
 
 Before implementing any performance optimizations, we need to establish baseline metrics on your target cluster. This provides a reference point for measuring the effectiveness of our tuning efforts in subsequent modules.
 
-[IMPORTANT]
-====
-**Why Test the Target Cluster?**
-
-We're running performance tests on the target cluster (not the hub cluster) because:
-
-* **Isolation**: Performance tuning will be applied to this cluster in later modules
-* **Safety**: Hub cluster remains stable for management operations
-* **Realism**: Tests run on the same environment that will be optimized
-* **Comparison**: Baseline and post-tuning metrics come from the same system
-====
-
 [[performance-testing-environment]]
 === Setting up the Performance Testing Environment
 
-. Create a dedicated namespace for performance testing:
-+
-[source,bash,role=execute]
-----
-# Create performance testing namespace
-oc create namespace performance-testing
-
-# Set the namespace as current context
-oc project performance-testing
-
-# Verify namespace creation
-oc get project performance-testing
-----
-
-. Label worker nodes for performance testing (optional - helps with workload placement):
-+
-[source,bash,role=execute]
-----
-# List worker nodes
-oc get nodes --selector='node-role.kubernetes.io/worker' --no-headers
-
-# Label nodes for performance testing (optional)
-# Replace 'worker-node-1' with actual node name
-# oc label node <worker-node-name> performance-testing=true
-----
 
 [[install-kube-burner]]
 === Installing kube-burner for Performance Testing
@@ -235,7 +154,7 @@ ls ~/kube-burner
 sudo mv kube-burner /usr/local/bin/
 
 # Verify installation
-kube-burner version || echo "kube-burner installed successfully"
+kube-burner version
 ----
 
 . Create a directory for kube-burner configuration files:
@@ -254,6 +173,7 @@ pwd
 [source,yaml,role=execute]
 ----
 cat > baseline-config.yml << 'EOF'
+---
 global:
   measurements:
     - name: podLatency
@@ -291,6 +211,7 @@ EOF
 [source,yaml,role=execute]
 ----
 cat > pod.yml << 'EOF'
+---
 apiVersion: v1
 kind: Pod
 metadata:
