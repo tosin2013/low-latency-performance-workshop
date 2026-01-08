@@ -21,17 +21,6 @@ This workshop requires:
 * SSH access to bastion host with pre-configured tools
 * Basic understanding of OpenShift and Kubernetes concepts
 
-[TIP]
-====
-*Launch Your Development Environment*
-
-Click below to launch your pre-configured Dev Spaces workspace:
-
-link:{devspaces_factory}[🚀 *Open in Dev Spaces*,role=button]
-
-This will create a workspace with all tools pre-installed and your SNO cluster credentials auto-mounted.
-====
-
 == What is Low-Latency and Why Does it Matter?
 
 .*Definition*
