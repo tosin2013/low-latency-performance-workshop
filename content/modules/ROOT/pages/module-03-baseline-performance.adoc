@@ -508,14 +508,3 @@ In Module 4, we'll begin implementing core performance tuning optimizations on t
 
 These optimizations should significantly improve the latency metrics you've just measured in your baseline tests.
 
-[NOTE]
-====
-**Cluster Context for Next Modules**: 
-
-Stay connected to your target cluster for the remaining workshop modules. All performance tuning will be applied to this cluster, and you'll run comparison tests here to measure improvements against your baseline metrics.
-
-If you need to verify cluster access:
-- SSH to bastion: `ssh {bastion_ssh_user_name}@{bastion_public_hostname}`
-- Kubeconfig is pre-configured on the bastion
-- Run `oc get nodes` to verify cluster access
-====
