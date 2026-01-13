@@ -105,6 +105,47 @@ Single Node OpenShift uses the built-in `master` Machine Config Pool. The Perfor
 
 Now we'll create a Performance Profile that configures CPU isolation, HugePages, and real-time kernel settings optimized for your cluster architecture.
 
+[IMPORTANT]
+====
+**Real-Time (RT) Kernel Requirements and Cost Considerations**
+
+The Linux Real-Time kernel extension (`kernel-rt`) provides deterministic scheduling and preemption capabilities essential for ultra-low latency workloads. However, it has specific infrastructure requirements:
+
+**AWS Instance Requirements:**
+* RT kernel requires **bare-metal EC2 instances** (instance types ending in `.metal`, e.g., `m5zn.metal`, `c5.metal`)
+* RT kernel **cannot run on virtualized instances** (e.g., `m5.4xlarge`, `c5.xlarge`)
+* This is because RT kernel needs direct hardware access for precise timing control
+
+**Cost Comparison (us-east-2 region):**
+* Virtualized instance (`m5.4xlarge`): ~$0.77/hour
+* Bare-metal instance (`m5zn.metal`): ~$3.96/hour (5x more expensive)
+
+**Workshop Recommendation:**
+
+By default, the Performance Profile script creates a profile **WITHOUT RT kernel enabled**. This configuration still provides:
+* ✅ CPU isolation (isolcpus)
+* ✅ HugePages allocation
+* ✅ NUMA topology optimization
+* ✅ Kernel tuning parameters
+
+This demonstrates **80% of low-latency concepts** at a fraction of the cost, making it ideal for workshops.
+
+**To Enable RT Kernel (if using bare-metal instances):**
+
+If your cluster is deployed on bare-metal instances and you want to enable RT kernel:
+
+[source,bash]
+----
+# Enable RT kernel via environment variable
+ENABLE_RT_KERNEL=true bash ~/low-latency-performance-workshop/scripts/module04-create-performance-profile.sh
+
+# Or use the command-line flag
+bash ~/low-latency-performance-workshop/scripts/module04-create-performance-profile.sh --enable-rt-kernel
+----
+
+The script will automatically detect your instance type and validate RT kernel requirements. If you attempt to enable RT kernel on a virtualized instance, the script will fail with a clear error message explaining the requirements.
+====
+
 . Determine optimal CPU allocation based on your cluster type:
 +
 [source,bash,role=execute]
@@ -145,19 +186,30 @@ bash ~/low-latency-performance-workshop/scripts/module04-create-performance-prof
 **What This Script Does:**
 
 * Loads and validates CPU allocation from previous step
+* Detects instance type (metal vs virtualized)
+* Validates RT kernel requirements if enabled
 * Validates CPU ranges to prevent invalid PerformanceProfile
 * Determines HugePages allocation based on cluster type
 * Creates PerformanceProfile with proper node selector
+* Conditionally enables RT kernel based on instance type and configuration
 * Shows configuration before applying (requires confirmation)
 
 **Benefits of Using the Script:**
 
-* **Prevents Errors**: Validates CPU ranges before creating PerformanceProfile
+* **Prevents Errors**: Validates CPU ranges and RT kernel requirements before creating PerformanceProfile
+* **Smart Defaults**: RT kernel disabled by default (works on all instance types)
+* **Instance Detection**: Automatically detects bare-metal vs virtualized instances
 * **Interactive**: Shows configuration and asks for confirmation
 * **Clear Output**: Displays profile summary and next steps
 * **Error Handling**: Provides helpful error messages if creation fails
 
 **The script will ask for confirmation before applying the PerformanceProfile.**
+
+**RT Kernel Configuration:**
+
+* **Default**: RT kernel is **disabled** (works on all instance types)
+* **To Enable**: Set `ENABLE_RT_KERNEL=true` or use `--enable-rt-kernel` flag
+* **Validation**: Script will fail with clear error if RT kernel is requested on non-metal instances
 ====
 +
 [NOTE]
@@ -174,7 +226,16 @@ Then retry the Performance Profile creation.
 
 === Step 4: Monitor the Performance Profile Application
 
-The Performance Profile will trigger a rolling update of your nodes. This process includes installing the real-time kernel and applying all the specified optimizations. The monitoring approach varies by cluster architecture.
+The Performance Profile will trigger a rolling update of your nodes. This process includes applying CPU isolation, HugePages, NUMA tuning, and (if enabled) installing the real-time kernel. The monitoring approach varies by cluster architecture.
+
+[NOTE]
+====
+**RT Kernel Installation (if enabled):**
+
+If you enabled RT kernel, the node will reboot during the update process to load the real-time kernel. This is expected behavior and may take 10-20 minutes. The node will automatically rejoin the cluster after reboot.
+
+If RT kernel is disabled (default), the update process is faster and does not require a reboot - only kernel parameters are adjusted.
+====
 
 . Monitor Machine Config Pool status:
 +
@@ -217,20 +278,30 @@ oc describe mcp master | grep -A 10 -B 5 "Conditions:"
 source /tmp/cluster-config
 
 echo "=== Waiting for Performance Profile Application ==="
-echo "This process may take 10-20 minutes depending on your environment"
+echo "This process may take 5-20 minutes depending on your configuration"
 
 echo ""
 echo "⏳ SNO Update Process:"
 echo "   1. Machine config generation"
 echo "   2. Node cordoning and draining"
-echo "   3. RT kernel installation and reboot"
-echo "   4. Node rejoin and ready state"
+if [ "${ENABLE_RT_KERNEL:-false}" = "true" ]; then
+    echo "   3. RT kernel installation and reboot (RT kernel enabled)"
+    echo "   4. Node rejoin and ready state"
+else
+    echo "   3. Kernel parameter updates (no reboot required)"
+    echo "   4. Node ready state"
+fi
 echo ""
 echo "🔄 Waiting for master MCP to be updated..."
 oc wait --for=condition=Updated mcp/master --timeout=1200s
 
-echo "🔄 Waiting for node to be ready after reboot..."
-oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
+# Only wait for reboot if RT kernel is enabled
+if [ "${ENABLE_RT_KERNEL:-false}" = "true" ]; then
+    echo "🔄 Waiting for node to be ready after reboot..."
+    oc wait --for=condition=Ready node/$TARGET_NODE --timeout=600s
+else
+    echo "✅ Node update complete (no reboot required)"
+fi
 
 echo ""
 echo "✅ Performance Profile application completed!"

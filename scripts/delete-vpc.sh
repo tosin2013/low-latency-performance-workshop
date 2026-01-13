@@ -28,6 +28,30 @@ export AWS_DEFAULT_REGION
 
 echo "Using region: ${AWS_DEFAULT_REGION}"
 
+# Detect OpenShift clusters by checking security group naming patterns
+detect_openshift() {
+    local openshift_sgs=$(aws ec2 describe-security-groups \
+        --filters "Name=vpc-id,Values=${VPC_ID}" \
+        --query 'SecurityGroups[?contains(GroupName, `-apiserver-lb`) || contains(GroupName, `-controlplane`) || contains(GroupName, `-node`)].GroupName' \
+        --output text 2>/dev/null || echo "")
+    
+    if [ -n "$openshift_sgs" ] && [ "$openshift_sgs" != "None" ]; then
+        echo "⚠️  OpenShift cluster detected in this VPC (security groups: $openshift_sgs)"
+        echo "   This script will attempt to clean up OpenShift resources."
+        echo "   If the cluster still exists, consider using 'openshift-install destroy cluster' first."
+        echo ""
+        return 0
+    fi
+    return 1
+}
+
+# Detect OpenShift before starting
+if detect_openshift; then
+    OPENSHIFT_DETECTED=true
+else
+    OPENSHIFT_DETECTED=false
+fi
+
 # Function to delete resources with error handling
 delete_resource() {
     local aws_command=$1
@@ -107,6 +131,30 @@ done
 
 # 5. Delete Route Tables (except main)
 echo "Step 5: Deleting Route Tables..."
+# First, disassociate all route table associations (except main)
+ALL_RT_IDS=$(aws ec2 describe-route-tables \
+    --filters "Name=vpc-id,Values=${VPC_ID}" \
+    --query 'RouteTables[*].RouteTableId' \
+    --output text 2>/dev/null || echo "")
+
+for RT_ID in $ALL_RT_IDS; do
+    if [ -n "$RT_ID" ]; then
+        # Get all non-main associations for this route table
+        ASSOCIATION_IDS=$(aws ec2 describe-route-tables \
+            --route-table-ids "$RT_ID" \
+            --query 'RouteTables[0].Associations[?Main!=`true`].RouteTableAssociationId' \
+            --output text 2>/dev/null || echo "")
+        
+        for ASSOC_ID in $ASSOCIATION_IDS; do
+            if [ -n "$ASSOC_ID" ] && [ "$ASSOC_ID" != "None" ]; then
+                echo "  Disassociating Route Table Association ${ASSOC_ID}..."
+                aws ec2 disassociate-route-table --association-id "$ASSOC_ID" >/dev/null 2>&1 || true
+            fi
+        done
+    fi
+done
+
+# Now delete non-main route tables
 RT_IDS=$(aws ec2 describe-route-tables \
     --filters "Name=vpc-id,Values=${VPC_ID}" \
     --query 'RouteTables[?Associations[0].Main!=`true`].RouteTableId' \
@@ -117,6 +165,8 @@ for RT_ID in $RT_IDS; do
         delete_resource "aws ec2 delete-route-table --route-table-id $RT_ID" "$RT_ID" "Route Table"
     fi
 done
+
+# Note: Main route table cannot be deleted directly, but will be cleaned up with VPC
 
 # 6. Delete Load Balancers (ELBv2/ALB and Classic ELB)
 echo "Step 6: Deleting Load Balancers..."
@@ -223,6 +273,40 @@ SG_IDS=$(aws ec2 describe-security-groups \
     --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
     --output text 2>/dev/null || echo "")
 
+# Step 10a: Remove security group rules that reference other security groups
+# This is critical for OpenShift clusters where security groups cross-reference each other
+if [ -n "$SG_IDS" ] && [ "$SG_IDS" != "None" ]; then
+    echo "  Removing security group cross-references (required for OpenShift)..."
+    for SG_ID in $SG_IDS; do
+        if [ -n "$SG_ID" ]; then
+            # Remove ingress rules that reference other security groups
+            INGRESS_RULES=$(aws ec2 describe-security-groups \
+                --group-ids "$SG_ID" \
+                --query 'SecurityGroups[0].IpPermissions[?length(UserIdGroupPairs) > `0`]' \
+                --output json 2>/dev/null || echo "[]")
+            
+            if [ "$INGRESS_RULES" != "[]" ] && [ -n "$INGRESS_RULES" ]; then
+                echo "    Removing ingress rules from Security Group ${SG_ID}..."
+                aws ec2 revoke-security-group-ingress --group-id "$SG_ID" --ip-permissions "$INGRESS_RULES" >/dev/null 2>&1 || true
+            fi
+            
+            # Remove egress rules that reference other security groups
+            EGRESS_RULES=$(aws ec2 describe-security-groups \
+                --group-ids "$SG_ID" \
+                --query 'SecurityGroups[0].IpPermissionsEgress[?length(UserIdGroupPairs) > `0`]' \
+                --output json 2>/dev/null || echo "[]")
+            
+            if [ "$EGRESS_RULES" != "[]" ] && [ -n "$EGRESS_RULES" ]; then
+                echo "    Removing egress rules from Security Group ${SG_ID}..."
+                aws ec2 revoke-security-group-egress --group-id "$SG_ID" --ip-permissions "$EGRESS_RULES" >/dev/null 2>&1 || true
+            fi
+        fi
+    done
+    echo "  ✅ Security group cross-references removed"
+    echo ""
+fi
+
+# Step 10b: Attempt to delete security groups
 for SG_ID in $SG_IDS; do
     if [ -n "$SG_ID" ]; then
         # Try to delete the security group (AWS will handle dependencies)
@@ -231,19 +315,44 @@ for SG_ID in $SG_IDS; do
         if aws ec2 delete-security-group --group-id "$SG_ID" 2>/dev/null; then
             echo "    ✅ Security Group ${SG_ID} deleted"
         else
-            echo "    ⚠️  Security Group ${SG_ID} may have dependencies (will retry after other resources)"
+            echo "    ⚠️  Security Group ${SG_ID} may have dependencies (will retry)"
         fi
     fi
 done
 
-# Retry security group deletion (in case dependencies were removed)
-for SG_ID in $SG_IDS; do
-    if [ -n "$SG_ID" ]; then
-        if aws ec2 describe-security-groups --group-ids "$SG_ID" >/dev/null 2>&1; then
-            echo "  Retrying deletion of Security Group ${SG_ID}..."
-            delete_resource "aws ec2 delete-security-group --group-id $SG_ID" "$SG_ID" "Security Group"
-        fi
+# Step 10c: Retry security group deletion with multiple passes
+# This is especially important for OpenShift clusters
+MAX_RETRIES=3
+RETRY_DELAY=5
+
+for RETRY in $(seq 1 $MAX_RETRIES); do
+    REMAINING_SGS=$(aws ec2 describe-security-groups \
+        --filters "Name=vpc-id,Values=${VPC_ID}" \
+        --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
+        --output text 2>/dev/null || echo "")
+    
+    if [ -z "$REMAINING_SGS" ] || [ "$REMAINING_SGS" == "None" ]; then
+        break
     fi
+    
+    if [ $RETRY -gt 1 ]; then
+        echo "  Retry pass $RETRY of $MAX_RETRIES (waiting ${RETRY_DELAY}s for dependencies to clear)..."
+        sleep $RETRY_DELAY
+        RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+    fi
+    
+    for SG_ID in $REMAINING_SGS; do
+        if [ -n "$SG_ID" ]; then
+            if aws ec2 describe-security-groups --group-ids "$SG_ID" >/dev/null 2>&1; then
+                echo "  Retrying deletion of Security Group ${SG_ID}..."
+                if aws ec2 delete-security-group --group-id "$SG_ID" 2>/dev/null; then
+                    echo "    ✅ Security Group ${SG_ID} deleted"
+                else
+                    echo "    ⚠️  Security Group ${SG_ID} still has dependencies"
+                fi
+            fi
+        fi
+    done
 done
 
 # 11. Delete VPC
@@ -252,8 +361,27 @@ if aws ec2 delete-vpc --vpc-id "$VPC_ID" 2>/dev/null; then
     echo "✅ VPC ${VPC_ID} deleted successfully!"
 else
     echo "❌ Failed to delete VPC ${VPC_ID}. It may still have dependencies."
-    echo "   Check for any remaining resources:"
-    echo "   aws ec2 describe-vpcs --vpc-ids ${VPC_ID}"
+    echo ""
+    
+    if [ "$OPENSHIFT_DETECTED" = true ]; then
+        echo "⚠️  OpenShift-specific cleanup suggestions:"
+        echo "   1. If the OpenShift cluster still exists, use 'openshift-install destroy cluster' first"
+        echo "   2. Check for remaining security groups:"
+        echo "      aws ec2 describe-security-groups --filters Name=vpc-id,Values=${VPC_ID}"
+        echo "   3. Check for remaining route tables:"
+        echo "      aws ec2 describe-route-tables --filters Name=vpc-id,Values=${VPC_ID}"
+        echo "   4. Check for remaining network interfaces:"
+        echo "      aws ec2 describe-network-interfaces --filters Name=vpc-id,Values=${VPC_ID}"
+    else
+        echo "   Check for any remaining resources:"
+        echo "   aws ec2 describe-vpcs --vpc-ids ${VPC_ID}"
+        echo ""
+        echo "   Common remaining resources:"
+        echo "   - Security Groups: aws ec2 describe-security-groups --filters Name=vpc-id,Values=${VPC_ID}"
+        echo "   - Route Tables: aws ec2 describe-route-tables --filters Name=vpc-id,Values=${VPC_ID}"
+        echo "   - Network Interfaces: aws ec2 describe-network-interfaces --filters Name=vpc-id,Values=${VPC_ID}"
+    fi
+    
     exit 1
 fi
 

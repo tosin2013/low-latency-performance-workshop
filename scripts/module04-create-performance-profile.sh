@@ -15,10 +15,18 @@
 #
 # Options:
 #   --auto-yes          Automatically confirm (skip confirmation prompt)
+#   --enable-rt-kernel   Enable Real-Time kernel (requires bare-metal instance)
 #   --help              Show this help message
+#
+# Environment Variables:
+#   ENABLE_RT_KERNEL    Set to 'true' to enable RT kernel (default: false)
+#                       Note: RT kernel requires bare-metal EC2 instances (*.metal)
 #
 
 set -euo pipefail
+
+# RT Kernel configuration (default: disabled)
+ENABLE_RT_KERNEL="${ENABLE_RT_KERNEL:-false}"
 
 # Parse command-line arguments
 AUTO_YES=false
@@ -29,6 +37,10 @@ while [[ $# -gt 0 ]]; do
             AUTO_YES=true
             shift
             ;;
+        --enable-rt-kernel)
+            ENABLE_RT_KERNEL=true
+            shift
+            ;;
         --help)
             echo "Module 4: Performance Profile Creator"
             echo ""
@@ -36,12 +48,18 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --auto-yes          Automatically confirm (skip confirmation prompt)"
+            echo "  --enable-rt-kernel  Enable Real-Time kernel (requires bare-metal instance)"
             echo "  --help              Show this help message"
+            echo ""
+            echo "Environment Variables:"
+            echo "  ENABLE_RT_KERNEL    Set to 'true' to enable RT kernel (default: false)"
+            echo "                      Note: RT kernel requires bare-metal EC2 instances (*.metal)"
             echo ""
             echo "This script:"
             echo "  - Loads CPU allocation from /tmp/cluster-config"
             echo "  - If config doesn't exist, runs CPU allocation calculator first"
             echo "  - Validates CPU ranges to prevent errors"
+            echo "  - Detects instance type and validates RT kernel requirements"
             echo "  - Creates PerformanceProfile with proper configuration"
             echo "  - Shows configuration before applying (unless --auto-yes)"
             echo ""
@@ -200,6 +218,60 @@ validate_cpu_range "$ISOLATED_CPUS" "isolated"
 success "CPU allocation validated"
 echo ""
 
+# Detect instance type and validate RT kernel requirements
+info "Detecting instance type..."
+INSTANCE_TYPE=$(oc get node "$TARGET_NODE" -o jsonpath='{.metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "unknown")
+
+if [ "$INSTANCE_TYPE" = "unknown" ]; then
+    warning "Could not detect instance type from node labels"
+    warning "Assuming non-metal instance for safety"
+    IS_METAL_INSTANCE=false
+elif [[ "$INSTANCE_TYPE" == *".metal"* ]]; then
+    IS_METAL_INSTANCE=true
+    success "Detected bare-metal instance: $INSTANCE_TYPE"
+else
+    IS_METAL_INSTANCE=false
+    info "Detected virtualized instance: $INSTANCE_TYPE"
+fi
+
+# Validate RT kernel requirements
+if [ "$ENABLE_RT_KERNEL" = "true" ] && [ "$IS_METAL_INSTANCE" = "false" ]; then
+    echo ""
+    error "Real-Time (RT) Kernel Requires Bare-Metal Instance
+
+Current instance type: $INSTANCE_TYPE (virtualized)
+RT kernel requested: true
+
+The Linux Real-Time kernel extension (kernel-rt) requires direct hardware
+access and cannot run on virtualized EC2 instances.
+
+COST COMPARISON (us-east-2):
+  - Current ($INSTANCE_TYPE):  ~\$0.77/hr
+  - Cheapest metal (m5zn.metal): ~\$3.96/hr (5x more expensive)
+
+OPTIONS:
+  1. Continue WITHOUT RT kernel (recommended for workshop):
+     - CPU isolation, HugePages, NUMA tuning still work
+     - Demonstrates 80% of low-latency concepts
+     - Run: ENABLE_RT_KERNEL=false $0
+
+  2. Redeploy with bare-metal instance:
+     - Update agnosticd-v2-vars/low-latency-sno-aws.yml:
+       control_plane_instance_type: m5zn.metal
+     - Redeploy cluster, then run with:
+       ENABLE_RT_KERNEL=true $0"
+fi
+
+# Display RT kernel status
+if [ "$ENABLE_RT_KERNEL" = "true" ]; then
+    if [ "$IS_METAL_INSTANCE" = "true" ]; then
+        success "RT kernel will be enabled (bare-metal instance detected)"
+    fi
+else
+    info "RT kernel disabled (default). CPU isolation, HugePages, and NUMA tuning will still be applied."
+fi
+echo ""
+
 # Determine HugePages allocation and node selector based on cluster type
 case "$CLUSTER_TYPE" in
     SNO)
@@ -234,6 +306,16 @@ TEMP_FILE=$(mktemp)
 trap "rm -f $TEMP_FILE" EXIT
 
 # Generate Performance Profile YAML
+# Build kernel args conditionally based on RT kernel setting
+KERNEL_ARGS=("nosmt")
+
+if [ "$ENABLE_RT_KERNEL" = "true" ]; then
+    # RT kernel specific args
+    KERNEL_ARGS+=("nohz_full=$ISOLATED_CPUS")
+    KERNEL_ARGS+=("rcu_nocbs=$ISOLATED_CPUS")
+fi
+
+# Build YAML with conditional RT kernel section
 cat > "$TEMP_FILE" << EOF
 apiVersion: performance.openshift.io/v2
 kind: PerformanceProfile
@@ -254,13 +336,24 @@ spec:
     $NODE_SELECTOR
   numa:
     topologyPolicy: "single-numa-node"
+EOF
+
+# Conditionally add RT kernel section
+if [ "$ENABLE_RT_KERNEL" = "true" ]; then
+    cat >> "$TEMP_FILE" << RTEOF
   realTimeKernel:
     enabled: true
+RTEOF
+fi
+
+# Add kernel args
+cat >> "$TEMP_FILE" << EOF
   additionalKernelArgs:
-  - "nosmt"
-  - "nohz_full=$ISOLATED_CPUS"
-  - "rcu_nocbs=$ISOLATED_CPUS"
 EOF
+
+for arg in "${KERNEL_ARGS[@]}"; do
+    echo "  - \"$arg\"" >> "$TEMP_FILE"
+done
 
 # Display the Performance Profile
 echo -e "${CYAN}Performance Profile Configuration:${NC}"
@@ -299,7 +392,12 @@ echo "   Name: $PROFILE_NAME"
 echo "   Reserved CPUs: $RESERVED_CPUS"
 echo "   Isolated CPUs: $ISOLATED_CPUS"
 echo "   HugePages: ${HUGEPAGES_COUNT}GB"
-echo "   Real-Time Kernel: Enabled"
+if [ "$ENABLE_RT_KERNEL" = "true" ]; then
+    echo "   Real-Time Kernel: Enabled"
+else
+    echo "   Real-Time Kernel: Disabled (CPU isolation, HugePages, NUMA still active)"
+fi
+echo "   Instance Type: $INSTANCE_TYPE"
 echo "   Node Selector: $NODE_SELECTOR"
 echo ""
 

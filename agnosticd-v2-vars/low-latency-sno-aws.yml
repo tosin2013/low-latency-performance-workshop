@@ -1,7 +1,22 @@
 ---
 # ===================================================================
-# Low-Latency Performance Workshop - SNO Deployment
-# Pure AgnosticD V2 Best Practices
+# Low-Latency Performance Workshop - Student SNO Deployment
+# Hub + Spoke Architecture - Student Cluster
+# ===================================================================
+# This configuration deploys a Single Node OpenShift (SNO) cluster
+# for individual students to perform hands-on performance tuning.
+#
+# ARCHITECTURE:
+#   - This is the "Spoke" in the Hub + Spoke architecture
+#   - Workshop documentation (Showroom) is hosted on a separate Hub cluster
+#   - This cluster may reboot during Module 4 (Performance Profile)
+#   - Students access this cluster via bastion for hands-on work
+#
+# DEPLOYMENT ORDER:
+#   1. Deploy student SNO clusters FIRST (this config)
+#   2. Collect bastion credentials from each deployment
+#   3. Deploy Hub cluster SECOND with collected credentials
+#
 # ===================================================================
 
 # ===================================================================
@@ -36,7 +51,54 @@ cloud_tags:
 # ===================================================================
 control_plane_instance_count: 1
 worker_instance_count: 0
+
+# Instance Type Configuration
+# ===================================================================
+# DEFAULT: Virtualized instance (workshop-friendly, cost-effective)
+# - Supports CPU isolation, HugePages, NUMA tuning (Module 4)
+# - RT kernel is disabled by default (works on virtualized instances)
+# - Cost: ~$0.77/hour (us-east-2)
 control_plane_instance_type: m5.4xlarge
+
+# OPTIONAL: Bare-Metal instance (for Real-Time kernel support)
+# ===================================================================
+# Uncomment ONE of the options below if you need RT kernel support in Module 4
+# RT kernel requires bare-metal instances and is ~5x more expensive
+#
+# RECOMMENDED: m5zn.metal (best latency, smallest metal instance)
+# - 48 vCPUs, 192 GiB RAM
+# - Cost: ~$3.96/hour (us-east-2)
+# - Best for: Low-latency workloads requiring RT kernel
+# control_plane_instance_type: m5zn.metal
+#
+# ALTERNATIVE: c5.metal (compute-optimized)
+# - 96 vCPUs, 192 GiB RAM
+# - Cost: ~$4.08/hour (us-east-2)
+# - Best for: CPU-intensive workloads
+# control_plane_instance_type: c5.metal
+#
+# ALTERNATIVE: c5n.metal (compute-optimized, enhanced networking)
+# - 72 vCPUs, 192 GiB RAM, 100 Gbps network
+# - Cost: ~$3.89/hour (us-east-2)
+# - Best for: Network-intensive workloads
+# control_plane_instance_type: c5n.metal
+#
+# ALTERNATIVE: m5.metal (general-purpose)
+# - 96 vCPUs, 384 GiB RAM
+# - Cost: ~$4.61/hour (us-east-2)
+# - Best for: Balanced workloads needing more memory
+# control_plane_instance_type: m5.metal
+#
+# ALTERNATIVE: c7i.metal-24xl (latest generation, compute-optimized)
+# - 96 vCPUs, 192 GiB RAM
+# - Cost: ~$4.28/hour (us-east-2)
+# - Best for: Latest generation performance
+# control_plane_instance_type: c7i.metal-24xl
+#
+# NOTE: Pricing is approximate and may vary by region and over time
+# Check current pricing at: https://aws.amazon.com/ec2/pricing/on-demand/
+# ===================================================================
+
 control_plane_storage_size: 200
 control_plane_storage_type: gp3
 
@@ -74,18 +136,27 @@ workloads:
   - agnosticd.core_workloads.ocp4_workload_openshift_virtualization
   # NOTE: SR-IOV operator workload does not exist in core_workloads collection
   # - agnosticd.core_workloads.ocp4_workload_sriov_network_operator
-  # Workshop documentation via Showroom
-  - agnosticd.core_workloads.ocp4_workload_showroom
+  # NOTE: Showroom is NOT deployed here - it's hosted on the Hub cluster
+  # This ensures workshop docs remain available during Module 4 reboots
 
 # ===================================================================
 # Cert Manager Workload Configuration
 # ===================================================================
 ocp4_workload_cert_manager_channel: stable-v1
+ocp4_workload_cert_manager_provider: letsencrypt
+# Let's Encrypt email (required for account registration and notifications)
+# Set this in secrets file or pass as extra var: -e "ocp4_workload_cert_manager_email=your-email@example.com"
+ocp4_workload_cert_manager_email: "{{ ocp4_workload_cert_manager_email | default('admin@example.com') }}"
 ocp4_workload_cert_manager_aws_region: "{{ aws_region }}"
-ocp4_workload_cert_manager_aws_access_key_id: "{{ aws_access_key_id | default('') }}"
-ocp4_workload_cert_manager_aws_secret_access_key: "{{ aws_secret_access_key | default('') }}"
-# Disable certificate installation since we don't have route53 credentials
-ocp4_workload_cert_manager_install_ingress_certificates: false
+ocp4_workload_cert_manager_aws_access_key_id: "{{ aws_access_key_id }}"
+ocp4_workload_cert_manager_aws_secret_access_key: "{{ aws_secret_access_key }}"
+# Enable SSL certificates for secure HTTPS access
+# Requires AWS credentials with Route53 permissions for DNS-01 challenge
+ocp4_workload_cert_manager_install_ingress_certificates: true
+# NOTE: API certificates disabled during initial deployment to avoid SSL verification
+# errors when AgnosticD connects before Let's Encrypt certificates are ready.
+# API will use default self-signed certificate (still secure, just not Let's Encrypt).
+# Ingress certificates are installed and will be available for console/apps access.
 ocp4_workload_cert_manager_install_api_certificates: false
 
 # ===================================================================
@@ -98,34 +169,4 @@ ocp4_workload_openshift_virtualization_wait_for_deploy: true
 # SR-IOV Network Operator Workload Configuration
 # ===================================================================
 ocp4_workload_sriov_network_operator_channel: stable
-
-# ===================================================================
-# Showroom Workload Configuration (Workshop Documentation)
-# ===================================================================
-# Repository containing Antora content
-ocp4_workload_showroom_content_git_repo: https://github.com/tosin2013/low-latency-performance-workshop.git
-ocp4_workload_showroom_content_git_repo_ref: main
-
-# Antora content location in repository
-ocp4_workload_showroom_content_path: content
-
-# Showroom configuration
-ocp4_workload_showroom_namespace: low-latency-workshop
-ocp4_workload_showroom_name: workshop-docs
-
-# Showroom Workload Configuration
-# NOTE: Variable names in documentation must match AgnosticD user_data keys:
-#   - bastion_public_hostname
-#   - bastion_ssh_user_name  
-#   - bastion_ssh_password
-#   - openshift_api_url
-#   - openshift_console_url
-# These are automatically set by the bastion role and passed to Showroom
-
-# Showroom UI customization
-ocp4_workload_showroom_lab_name: "Low-Latency Performance Workshop"
-
-# Use wetty terminal with auto-SSH to bastion (password from user_data)
-ocp4_workload_showroom_terminal_type: wetty
-ocp4_workload_showroom_wetty_ssh_bastion_login: true
 

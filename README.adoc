@@ -57,13 +57,47 @@ This edition of the **Low-Latency Performance Workshop** has been developed and 
 
 == Workshop Architecture
 
-The workshop uses a **GitOps-first approach** with the following architecture:
+The workshop uses a **Hub + Spoke architecture** to ensure workshop documentation remains available during student cluster reboots:
 
-* **Hub Cluster**: RHACM and ArgoCD for multi-cluster management
-* **Target Clusters**: OpenShift 4.20 Single Node OpenShift (SNO) clusters with performance optimizations
+=== Hub + Spoke Design
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Hub Cluster                                    │
+│                     (workshop-hub-aws.yml)                               │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐          │
+│  │ student1-workshop│  │ student2-workshop│  │ student3-workshop│         │
+│  │   (Showroom)    │  │   (Showroom)    │  │   (Showroom)    │          │
+│  │  + Wetty Term   │  │  + Wetty Term   │  │  + Wetty Term   │          │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘          │
+│           │                    │                    │                    │
+└───────────┼────────────────────┼────────────────────┼────────────────────┘
+            │ SSH                │ SSH                │ SSH
+            ▼                    ▼                    ▼
+┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+│  student1 SNO     │  │  student2 SNO     │  │  student3 SNO     │
+│  (Spoke Cluster)  │  │  (Spoke Cluster)  │  │  (Spoke Cluster)  │
+│  - Performance    │  │  - Performance    │  │  - Performance    │
+│  - Virtualization │  │  - Virtualization │  │  - Virtualization │
+└───────────────────┘  └───────────────────┘  └───────────────────┘
+```
+
+=== Why Hub + Spoke?
+
+When students apply Performance Profiles in Module 4, their SNO cluster **reboots**. If Showroom runs on the same cluster, students lose access to instructions. The Hub + Spoke architecture solves this:
+
+* **Hub cluster** - Stable, never reboots, hosts all workshop documentation (Showroom)
+* **Student SNO clusters** - Can reboot safely during hands-on performance tuning
+* **Per-student Showrooms** - Each student gets their own Showroom instance with embedded terminal
+* **Students always have access** to instructions, even during cluster reboots
+
+=== Components
+
+* **Hub Cluster**: Standard OpenShift cluster hosting Showroom for all students
+* **Student SNO Clusters**: Single Node OpenShift clusters for hands-on performance tuning
+* **Per-Student Showrooms**: Individual workshop instances with Wetty terminals connected to each student's bastion
 * **Performance Testing**: Modern kube-burner configurations with structured metrics
-* **Monitoring Stack**: Prometheus, Grafana, and Alertmanager integration
-* **Environment**: AWS-based with `*.dynamic.redhatworkshops.io` domain pattern
+* **Environment**: AWS-based with `*.opentlc.com` domain pattern
 
 == Key Learning Outcomes
 
@@ -86,11 +120,14 @@ low-latency-performance-workshop/
 │   ├── antora.yml                   # Antora configuration
 │   └── lib/                         # Extensions and utilities
 ├── agnosticd-v2-vars/               # AgnosticD v2 configurations
-│   ├── low-latency-sno-aws.yml      # SNO cluster config
-│   └── README.md                    # Config documentation
+│   ├── low-latency-sno-aws.yml      # Student SNO cluster config
+│   ├── workshop-hub-aws.yml         # Hub cluster config (hosts Showroom)
+│   └── README.md                    # Detailed deployment documentation
 ├── scripts/                         # Deployment scripts
-│   ├── workshop-setup.sh            # Full automated setup
-│   ├── deploy-sno.sh                # Deploy SNO cluster
+│   ├── workshop-setup.sh            # Initial environment setup
+│   ├── deploy-workshop.sh           # Automated full deployment (Hub + Students)
+│   ├── deploy-student-showrooms.sh  # Per-student Showroom deployment
+│   ├── deploy-sno.sh                # Deploy single SNO cluster
 │   ├── destroy-sno.sh               # Destroy SNO cluster
 │   ├── status-sno.sh                # Check cluster status
 │   └── delete-vpc.sh                # Idempotent VPC deletion script
@@ -135,36 +172,109 @@ low-latency-performance-workshop/
 
 == Workshop Deployment (Quick Start)
 
-=== Quick Setup (5 minutes)
+=== Step 1: Initial Setup (5 minutes)
 
 [source,bash]
 ----
-cd ~/Development/low-latency-performance-workshop
+# Clone the repository
+git clone https://github.com/tosin2013/low-latency-performance-workshop.git
+cd low-latency-performance-workshop
+
+# Run the setup script
 ./scripts/workshop-setup.sh
 ----
 
-=== Deploy SNO Cluster
+=== Step 2: Configure Secrets
+
+Edit the secrets files created in `~/Development/agnosticd-v2-secrets/`:
 
 [source,bash]
 ----
-./scripts/deploy-sno.sh student1 sandbox1234
+# Add your OpenShift pull secret
+vim ~/Development/agnosticd-v2-secrets/secrets.yml
+
+# Add AWS credentials (rename XXX to your sandbox number)
+cp ~/Development/agnosticd-v2-secrets/secrets-sandboxXXX.yml \
+   ~/Development/agnosticd-v2-secrets/secrets-sandbox5466.yml
+vim ~/Development/agnosticd-v2-secrets/secrets-sandbox5466.yml
+----
+
+=== Step 3: Deploy Full Workshop (Automated)
+
+Use the automated deployment script to deploy Hub + Student clusters:
+
+[source,bash]
+----
+./scripts/deploy-workshop.sh \
+  --hub-account sandbox5466 \
+  --student-account sandbox5466 \
+  --students student1,student2
+----
+
+This script will:
+
+1. Deploy student SNO clusters (one per student)
+2. Collect credentials from each deployment
+3. Deploy Hub cluster with Showroom
+4. Deploy per-student Showroom instances
+
+=== Step 4: Access the Workshop
+
+After deployment, each student gets their own workshop URL:
+
+[cols="1,2"]
+|===
+| Student | Workshop URL
+
+| student1
+| `https://student1-workshop-low-latency-workshop.apps.ocp.hub.sandbox5466.opentlc.com/`
+
+| student2
+| `https://student2-workshop-low-latency-workshop.apps.ocp.hub.sandbox5466.opentlc.com/`
+|===
+
+Each student's Showroom includes:
+
+* Workshop documentation (left panel)
+* Terminal connected to their bastion (right panel)
+
+=== Manual Deployment (Alternative)
+
+If you prefer to deploy manually:
+
+[source,bash]
+----
+cd ~/Development/agnosticd-v2
+
+# 1. Deploy student SNO clusters FIRST
+./bin/agd provision -g student1 -c low-latency-sno-aws -a sandbox5466
+./bin/agd provision -g student2 -c low-latency-sno-aws -a sandbox5466
+
+# 2. Deploy Hub cluster
+./bin/agd provision -g hub -c workshop-hub-aws -a sandbox5466
+
+# 3. Deploy per-student Showroom instances
+cd ~/low-latency-performance-workshop
+./scripts/deploy-student-showrooms.sh --students student1,student2
 ----
 
 === Check Status
 
 [source,bash]
 ----
-./scripts/status-sno.sh student1 sandbox1234
+./scripts/status-sno.sh student1 sandbox5466
 ----
 
-=== Destroy Cluster
+=== Destroy Clusters
 
 [source,bash]
 ----
-./scripts/destroy-sno.sh student1 sandbox1234
+cd ~/Development/agnosticd-v2
+./bin/agd destroy -g student1 -c low-latency-sno-aws -a sandbox5466
+./bin/agd destroy -g hub -c workshop-hub-aws -a sandbox5466
 ----
 
-For complete setup instructions, see link:docs/WORKSHOP_SETUP.md[Workshop Setup Guide].
+For complete setup instructions, see link:docs/WORKSHOP_SETUP.md[Workshop Setup Guide] and link:agnosticd-v2-vars/README.md[AgnosticD Configuration Guide].
 
 === After Deployment
 

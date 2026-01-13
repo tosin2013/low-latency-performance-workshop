@@ -244,6 +244,22 @@ fi
 success "Detected $CPU_COUNT CPUs on node $TARGET_NODE"
 echo ""
 
+# Detect instance type
+info "Detecting instance type..."
+INSTANCE_TYPE=$(oc get node "$TARGET_NODE" -o jsonpath='{.metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "unknown")
+
+if [ "$INSTANCE_TYPE" = "unknown" ]; then
+    warning "Could not detect instance type from node labels"
+    IS_METAL_INSTANCE=false
+elif [[ "$INSTANCE_TYPE" == *".metal"* ]]; then
+    IS_METAL_INSTANCE=true
+    success "Detected bare-metal instance: $INSTANCE_TYPE"
+else
+    IS_METAL_INSTANCE=false
+    info "Detected virtualized instance: $INSTANCE_TYPE"
+fi
+echo ""
+
 # Calculate CPU allocation based on cluster architecture
 calculate_sno_allocation() {
     local cpu_count=$1
@@ -382,6 +398,10 @@ success "This allocation preserves cluster functionality while demonstrating per
     echo "# Cluster Context"
     echo "SAVED_CLUSTER=$CURRENT_CLUSTER"
     echo "SAVED_SERVER=$CURRENT_SERVER"
+    echo ""
+    echo "# Instance Information"
+    echo "INSTANCE_TYPE=$INSTANCE_TYPE"
+    echo "IS_METAL_INSTANCE=$IS_METAL_INSTANCE"
     echo ""
     echo "# CPU Configuration"
     echo "CPU_COUNT=$CPU_COUNT"

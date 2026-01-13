@@ -1,0 +1,150 @@
+---
+# ===================================================================
+# Low-Latency Performance Workshop - Hub Cluster Deployment
+# Hub + Spoke Architecture - Hub Cluster
+# ===================================================================
+# This configuration deploys a standard OpenShift cluster (3 masters + workers)
+# that hosts the workshop documentation (Showroom) for all students.
+#
+# ARCHITECTURE:
+#   - This is the "Hub" in the Hub + Spoke architecture
+#   - Hosts Showroom (workshop documentation) for ALL students
+#   - Remains stable and available during student cluster reboots
+#   - Student SNO clusters are deployed FIRST to generate credentials
+#   - This Hub cluster is deployed SECOND with collected student credentials
+#
+# DEPLOYMENT ORDER:
+#   1. Deploy student SNO clusters FIRST (low-latency-sno-aws.yml)
+#   2. Collect bastion credentials from each student deployment
+#   3. Deploy Hub cluster SECOND (this config) with collected credentials
+#
+# ===================================================================
+
+# ===================================================================
+# Mandatory Variables (agnosticd-v2)
+# ===================================================================
+cloud_provider: aws
+cloud_provider_version: main
+config: openshift-cluster
+
+# ===================================================================
+# Collections (agnosticd-v2 best practice)
+# ===================================================================
+requirements_content:
+  collections:
+  - name: https://github.com/agnosticd/core_workloads.git
+    type: git
+    version: main
+
+# ===================================================================
+# AWS Configuration
+# ===================================================================
+aws_region: us-east-2
+
+cloud_tags:
+  - owner: user@example.com
+  - Purpose: low-latency-workshop-hub
+  - config: openshift-cluster
+  - guid: "{{ guid }}"
+
+# ===================================================================
+# Standard OpenShift Cluster Configuration (3 Masters + Workers)
+# ===================================================================
+# Standard OpenShift deployment (not SNO)
+# Smaller instance types since this only hosts Showroom documentation
+control_plane_instance_count: 3
+worker_instance_count: 2
+control_plane_instance_type: m5.xlarge
+worker_instance_type: m5.large
+control_plane_storage_size: 120
+control_plane_storage_type: gp3
+worker_storage_size: 100
+worker_storage_type: gp3
+
+# Installation method
+host_ocp4_deploy_installation_method: openshift_install
+host_ocp4_installer_version: "4.20"
+host_ocp4_installer_set_user_data_kubeadmin_password: true
+
+# ===================================================================
+# Bastion Configuration
+# ===================================================================
+install_bastion: true
+bastion_setup_student_user: true
+bastion_student_user_name: lab-user
+
+# ===================================================================
+# Repository Configuration
+# ===================================================================
+install_satellite_repositories: false
+install_rhn_repositories: true
+
+# Required in secrets.yml:
+# host_satellite_repositories_hostname:
+# host_satellite_repositories_org:
+# host_satellite_repositories_activationkey:
+
+# ===================================================================
+# Workloads (Hub only hosts Showroom - no OpenShift Virtualization)
+# ===================================================================
+workloads:
+  # Cert Manager for SSL certificates
+  - agnosticd.core_workloads.ocp4_workload_cert_manager
+  # Deploy Showroom for each student (one per student bastion)
+  # Each student gets their own Showroom instance connected to their bastion
+  - agnosticd.core_workloads.ocp4_workload_showroom
+
+# ===================================================================
+# Cert Manager Workload Configuration
+# ===================================================================
+ocp4_workload_cert_manager_channel: stable-v1
+ocp4_workload_cert_manager_provider: letsencrypt
+# Let's Encrypt email (required for account registration and notifications)
+# Set this in secrets file or pass as extra var: -e "ocp4_workload_cert_manager_email=your-email@example.com"
+ocp4_workload_cert_manager_email: "{{ ocp4_workload_cert_manager_email | default('admin@example.com') }}"
+ocp4_workload_cert_manager_aws_region: "{{ aws_region }}"
+ocp4_workload_cert_manager_aws_access_key_id: "{{ aws_access_key_id }}"
+ocp4_workload_cert_manager_aws_secret_access_key: "{{ aws_secret_access_key }}"
+# Enable SSL certificates for secure HTTPS access
+# Requires AWS credentials with Route53 permissions for DNS-01 challenge
+ocp4_workload_cert_manager_install_ingress_certificates: true
+# IMPORTANT: API certificates disabled to avoid SSL verification failures during deployment
+# The API will use a self-signed cert, but ingress (console/apps) will have Let's Encrypt
+ocp4_workload_cert_manager_install_api_certificates: false
+
+# ===================================================================
+# Showroom Workload Configuration (Workshop Documentation)
+# ===================================================================
+# Repository containing Antora content
+ocp4_workload_showroom_content_git_repo: https://github.com/tosin2013/low-latency-performance-workshop.git
+ocp4_workload_showroom_content_git_repo_ref: main
+
+# Antora content location in repository
+ocp4_workload_showroom_content_path: content
+
+# Showroom configuration
+ocp4_workload_showroom_namespace: low-latency-workshop
+ocp4_workload_showroom_name: workshop-docs
+
+# Showroom UI customization
+ocp4_workload_showroom_lab_name: "Low-Latency Performance Workshop"
+
+# Use wetty terminal with auto-SSH to bastion
+ocp4_workload_showroom_terminal_type: wetty
+ocp4_workload_showroom_wetty_ssh_bastion_login: true
+
+# ===================================================================
+# Multi-Student Showroom Deployments
+# ===================================================================
+# After deploying the Hub cluster, run the following script to create
+# per-student Showroom instances with their own wetty terminals:
+#
+#   cd ~/low-latency-performance-workshop
+#   ./scripts/deploy-student-showrooms.sh --students student1,student2
+#
+# Each student will get their own Showroom URL:
+#   Student1: https://student1-workshop-low-latency-workshop.apps.ocp.hub.sandbox5466.opentlc.com/
+#   Student2: https://student2-workshop-low-latency-workshop.apps.ocp.hub.sandbox5466.opentlc.com/
+#
+# The script reads student credentials from ~/Development/agnosticd-v2-output/
+#
