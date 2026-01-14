@@ -74,9 +74,6 @@ npm test
 
 # Validate ArgoCD security
 ./scripts/validate-argocd-security.sh
-
-# Validate RHACM
-./scripts/validate-rhacm.sh
 ```
 
 ## Performance Analysis

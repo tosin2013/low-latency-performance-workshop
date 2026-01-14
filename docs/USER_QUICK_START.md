@@ -116,7 +116,7 @@ oc get all -n workshop-studentN
 The workshop consists of the following modules:
 
 1. **Module 01**: Introduction to Low-Latency Workloads
-2. **Module 02**: RHACM Setup (pre-configured for you)
+2. **Module 02**: Operator Setup (pre-configured for you)
 3. **Module 03**: Baseline Performance Testing
 4. **Module 04**: Performance Profiles
 5. **Module 05**: Low-Latency Virtualization

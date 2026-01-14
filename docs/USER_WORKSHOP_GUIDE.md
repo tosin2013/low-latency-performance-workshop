@@ -122,7 +122,7 @@ oc login https://api.workshop-{username}.{domain}:6443 -u kubeadmin -p <password
 
 | Module | Description | Cluster |
 |--------|-------------|---------|
-| 02 | RHACM Setup | Hub (pre-configured) |
+| 02 | Operator Setup | Hub (pre-configured) |
 | 03 | Baseline Performance | **SNO** |
 | 04 | Performance Profile | **SNO** |
 | 05+ | Advanced Tuning | **SNO** |
@@ -160,8 +160,8 @@ oc get nodes -o wide
 oc get performanceprofile
 oc get tuned -n openshift-cluster-node-tuning-operator
 
-# Check for RHACM import (should show your cluster)
-oc get managedcluster
+# Check cluster status
+oc get nodes
 ```
 
 ---
@@ -182,7 +182,7 @@ oc login https://api.workshop-{username}.{domain}:6443 -u kubeadmin -p <password
 ### "Connection refused" or timeout
 
 1. Check if SNO cluster is running:
-   - Ask admin to verify: `oc get managedcluster workshop-{username}`
+   - Verify cluster API is accessible: `oc get nodes`
    
 2. Verify you're using the right URL (SNO, not hub)
 

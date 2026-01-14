@@ -89,7 +89,7 @@ oc get csv -n openshift-cnv
 
 The operators support these workshop modules:
 
-- **Module 2**: RHACM Setup + Operator Installation (SR-IOV only)
+- **Module 2**: Operator Installation (SR-IOV only)
 - **Module 4**: Performance Profiles (Node Tuning Operator - built-in)
 - **Module 5**: Low-Latency Virtualization (SR-IOV + OpenShift Virtualization)
 - **Module 6**: Advanced Tuning (Node Tuning Operator - built-in)
