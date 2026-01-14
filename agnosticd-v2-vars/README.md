@@ -37,14 +37,15 @@ Standard OpenShift cluster configuration for hosting workshop documentation (Hub
 cd ~/Development/agnosticd-v2
 
 # Step 1: Deploy student SNO clusters FIRST (see below)
-# Step 2: Collect credentials from each student deployment
-# Step 3: Deploy hub cluster with collected credentials
+# Step 2: Deploy hub cluster (no extra vars needed)
+# Step 3: Configure per-student Showroom instances using deploy-student-showrooms.sh
 
-./bin/agd provision -g hub -c workshop-hub-aws -a sandbox1111 \
-  -e "student1_bastion=bastion.student1.sandbox2222.opentlc.com" \
-  -e "student1_password=xxxxx" \
-  -e "student2_bastion=bastion.student2.sandbox2222.opentlc.com" \
-  -e "student2_password=xxxxx"
+# Deploy Hub cluster (no credentials needed - Showroom configured later)
+./bin/agd provision -g hub -c workshop-hub-aws -a sandbox1111
+
+# After Hub deployment, configure per-student Showrooms:
+cd ~/low-latency-performance-workshop
+./scripts/deploy-student-showrooms.sh --students student1,student2
 ```
 
 ### `low-latency-sno-aws.yml`
@@ -120,32 +121,25 @@ Deploy all student SNO clusters first. Each deployment generates:
 ./bin/agd provision -g student2 -c low-latency-sno-aws -a sandbox2222
 ```
 
-### Step 2: Collect Student Credentials
+### Step 2: Deploy Hub Cluster (AWS Environment 1)
 
-Extract credentials from each student's output directory:
-
-```bash
-# Example: Extract student1 credentials
-cat ~/Development/agnosticd-v2-output/student1/provision-user-info.yaml
-
-# Look for:
-# - Bastion hostname: bastion.student1.sandbox2222.opentlc.com
-# - Bastion password: xxxxx
-# - Console URL: https://console-openshift-console.apps.ocp.student1...
-```
-
-### Step 3: Deploy Hub Cluster (AWS Environment 1)
-
-Deploy the Hub cluster with collected student credentials:
+Deploy the Hub cluster (no student credentials needed):
 
 ```bash
 # Deploy to AWS Environment 1 (hub sandbox)
-./bin/agd provision -g hub -c workshop-hub-aws -a sandbox1111 \
-  -e "student1_bastion=bastion.student1.sandbox2222.opentlc.com" \
-  -e "student1_password=xxxxx" \
-  -e "student2_bastion=bastion.student2.sandbox2222.opentlc.com" \
-  -e "student2_password=xxxxx"
+./bin/agd provision -g hub -c workshop-hub-aws -a sandbox1111
 ```
+
+### Step 3: Configure Per-Student Showroom Instances
+
+After the Hub cluster is deployed, configure per-student Showroom instances:
+
+```bash
+cd ~/low-latency-performance-workshop
+./scripts/deploy-student-showrooms.sh --students student1,student2
+```
+
+This script reads student credentials from `~/Development/agnosticd-v2-output/` and creates per-student Showroom instances with wetty terminals connected to each student's bastion.
 
 ## AWS Resource Requirements
 

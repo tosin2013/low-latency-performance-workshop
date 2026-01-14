@@ -18,6 +18,7 @@ set -euo pipefail
 HUB_ACCOUNT=""
 STUDENT_ACCOUNT=""
 STUDENTS=""
+DRY_RUN=false
 AGNOSTICD_DIR="${AGNOSTICD_DIR:-$HOME/Development/agnosticd-v2}"
 OUTPUT_DIR="${AGNOSTICD_OUTPUT_DIR:-$HOME/Development/agnosticd-v2-output}"
 
@@ -51,6 +52,10 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"
             shift 2
             ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -60,10 +65,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --students LIST           Comma-separated list of student GUIDs (required)"
             echo "  --agnosticd-dir DIR       AgnosticD v2 directory (default: ~/Development/agnosticd-v2)"
             echo "  --output-dir DIR          Output directory (default: ~/Development/agnosticd-v2-output)"
+            echo "  --dry-run                 Show commands that would be executed without deploying"
             echo "  --help, -h                Show this help message"
             echo ""
-            echo "Example:"
+            echo "Examples:"
             echo "  $0 --hub-account sandbox1111 --student-account sandbox2222 --students student1,student2,student3"
+            echo "  $0 --hub-account sandbox1111 --student-account sandbox2222 --students student1,student2 --dry-run"
             exit 0
             ;;
         *)
@@ -94,7 +101,9 @@ if [ ! -f "$AGNOSTICD_DIR/bin/agd" ]; then
 fi
 
 # Ensure config files are available in AgnosticD directory
-WORKSHOP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Calculate script directory early (before any cd commands)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSHOP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_SOURCE_DIR="$WORKSHOP_DIR/agnosticd-v2-vars"
 CONFIG_TARGET_DIR="$AGNOSTICD_DIR/agnosticd-v2-vars"
 
@@ -112,7 +121,23 @@ echo ""
 echo -e "Hub Account: ${GREEN}$HUB_ACCOUNT${NC}"
 echo -e "Student Account: ${GREEN}$STUDENT_ACCOUNT${NC}"
 echo -e "Students: ${GREEN}$STUDENTS${NC}"
+if [ "$DRY_RUN" = true ]; then
+    echo -e "${YELLOW}Mode: DRY-RUN (no actual deployment)${NC}"
+fi
 echo ""
+
+# Helper function to execute commands with dry-run support
+execute_cmd() {
+    local cmd=("$@")
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${BLUE}[DRY-RUN] Would execute:${NC}"
+        echo "  ${cmd[*]}"
+        echo ""
+        return 0
+    else
+        "${cmd[@]}"
+    fi
+}
 
 # Convert comma-separated students to array
 IFS=',' read -ra STUDENT_ARRAY <<< "$STUDENTS"
@@ -144,12 +169,16 @@ for student in "${STUDENT_ARRAY[@]}"; do
     echo -e "${BLUE}Deploying SNO cluster for: ${GREEN}$student${NC}"
     
     cd "$AGNOSTICD_DIR"
-    ./bin/agd provision -g "$student" -c low-latency-sno-aws -a "$STUDENT_ACCOUNT" || {
+    execute_cmd ./bin/agd provision -g "$student" -c low-latency-sno-aws -a "$STUDENT_ACCOUNT" || {
         echo -e "${RED}Failed to deploy SNO cluster for $student${NC}"
         exit 1
     }
     
-    echo -e "${GREEN}✓ SNO cluster deployed for $student${NC}"
+    if [ "$DRY_RUN" != true ]; then
+        echo -e "${GREEN}✓ SNO cluster deployed for $student${NC}"
+    else
+        echo -e "${GREEN}✓ [DRY-RUN] SNO cluster deployment skipped for $student${NC}"
+    fi
     echo ""
 done
 
@@ -162,7 +191,6 @@ echo -e "${YELLOW}========================================${NC}"
 echo ""
 
 declare -A STUDENT_BASTIONS
-declare -A STUDENT_PASSWORDS
 declare -A STUDENT_CONSOLES
 
 for student in "${STUDENT_ARRAY[@]}"; do
@@ -181,18 +209,10 @@ for student in "${STUDENT_ARRAY[@]}"; do
         exit 1
     fi
     
-    # Extract password (between single quotes after "password")
-    password=$(grep -oP "password '[^']+'" "$user_info_file" | sed "s/password '//;s/'$//" | head -1 || echo "")
-    if [ -z "$password" ]; then
-        echo -e "${RED}Error: Could not extract password for $student${NC}"
-        exit 1
-    fi
-    
     # Extract console URL
     console=$(grep -oP 'https://console-openshift-console\.apps\.\S+' "$user_info_file" | head -1 || echo "")
     
     STUDENT_BASTIONS["$student"]="$bastion"
-    STUDENT_PASSWORDS["$student"]="$password"
     STUDENT_CONSOLES["$student"]="$console"
     
     echo -e "${GREEN}✓ Collected credentials for $student${NC}"
@@ -202,68 +222,59 @@ for student in "${STUDENT_ARRAY[@]}"; do
 done
 
 # ===================================================================
-# STEP 3: Build Extra Vars for Hub Deployment
+# STEP 3: Deploy Hub Cluster
 # ===================================================================
 echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}STEP 3: Preparing Hub Cluster Deployment${NC}"
+echo -e "${YELLOW}STEP 3: Deploying Hub Cluster${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
-
-# Build extra-vars string
-EXTRA_VARS=()
-for student in "${STUDENT_ARRAY[@]}"; do
-    student=$(echo "$student" | xargs) # Trim whitespace
-    EXTRA_VARS+=("-e" "${student}_bastion=${STUDENT_BASTIONS[$student]}")
-    EXTRA_VARS+=("-e" "${student}_password=${STUDENT_PASSWORDS[$student]}")
-done
-
-echo -e "${BLUE}Extra variables for Hub deployment:${NC}"
-for var in "${EXTRA_VARS[@]}"; do
-    if [[ $var == *"password"* ]]; then
-        # Mask password in output
-        masked_var=$(echo "$var" | sed 's/=.*/=****/')
-        echo "  $masked_var"
-    else
-        echo "  $var"
-    fi
-done
-echo ""
-
-# ===================================================================
-# STEP 4: Deploy Hub Cluster
-# ===================================================================
-echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}STEP 4: Deploying Hub Cluster${NC}"
-echo -e "${YELLOW}========================================${NC}"
+echo -e "${BLUE}Note: Student credentials are collected but not passed to Hub deployment.${NC}"
+echo -e "${BLUE}      Per-student Showroom instances will be configured later using deploy-student-showrooms.sh${NC}"
 echo ""
 
 cd "$AGNOSTICD_DIR"
-./bin/agd provision -g hub -c workshop-hub-aws -a "$HUB_ACCOUNT" "${EXTRA_VARS[@]}" || {
+
+# Deploy Hub cluster (no extra vars needed - Showroom is configured later)
+HUB_CMD=(./bin/agd provision -g hub -c workshop-hub-aws -a "$HUB_ACCOUNT")
+
+# Execute with dry-run support
+execute_cmd "${HUB_CMD[@]}" || {
     echo -e "${RED}Failed to deploy Hub cluster${NC}"
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${YELLOW}Note: This was a dry-run, so no actual deployment occurred${NC}"
+    fi
     exit 1
 }
 
-echo -e "${GREEN}✓ Hub cluster deployed${NC}"
+if [ "$DRY_RUN" != true ]; then
+    echo -e "${GREEN}✓ Hub cluster deployed${NC}"
+else
+    echo -e "${GREEN}✓ [DRY-RUN] Hub cluster deployment skipped${NC}"
+fi
 echo ""
 
 # ===================================================================
-# STEP 5: Deploy Per-Student Showroom Instances
+# STEP 4: Deploy Per-Student Showroom Instances
 # ===================================================================
 echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}STEP 5: Deploying Per-Student Showrooms${NC}"
+echo -e "${YELLOW}STEP 4: Deploying Per-Student Showrooms${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHOWROOM_SCRIPT="$SCRIPT_DIR/deploy-student-showrooms.sh"
 
 if [ -f "$SHOWROOM_SCRIPT" ]; then
-    echo -e "${BLUE}Running: $SHOWROOM_SCRIPT --students $STUDENTS${NC}"
-    "$SHOWROOM_SCRIPT" --students "$STUDENTS" || {
-        echo -e "${YELLOW}⚠️  Per-student Showroom deployment had issues${NC}"
-        echo -e "${YELLOW}   You can retry manually: $SHOWROOM_SCRIPT --students $STUDENTS${NC}"
-    }
-    echo -e "${GREEN}✓ Per-student Showrooms deployed${NC}"
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${BLUE}[DRY-RUN] Would run: $SHOWROOM_SCRIPT --students $STUDENTS${NC}"
+        echo -e "${GREEN}✓ [DRY-RUN] Per-student Showroom deployment skipped${NC}"
+    else
+        echo -e "${BLUE}Running: $SHOWROOM_SCRIPT --students $STUDENTS${NC}"
+        "$SHOWROOM_SCRIPT" --students "$STUDENTS" || {
+            echo -e "${YELLOW}⚠️  Per-student Showroom deployment had issues${NC}"
+            echo -e "${YELLOW}   You can retry manually: $SHOWROOM_SCRIPT --students $STUDENTS${NC}"
+        }
+        echo -e "${GREEN}✓ Per-student Showrooms deployed${NC}"
+    fi
 else
     echo -e "${YELLOW}⚠️  deploy-student-showrooms.sh not found at $SHOWROOM_SCRIPT${NC}"
     echo -e "${YELLOW}   Skipping per-student Showroom deployment${NC}"
@@ -271,10 +282,10 @@ fi
 echo ""
 
 # ===================================================================
-# STEP 6: Output Access Information
+# STEP 5: Output Access Information
 # ===================================================================
 echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}STEP 6: Access Information${NC}"
+echo -e "${YELLOW}STEP 5: Access Information${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 
@@ -313,8 +324,8 @@ for student in "${STUDENT_ARRAY[@]}"; do
     student=$(echo "$student" | xargs) # Trim whitespace
     echo "  $student:"
     echo "    Bastion: ${STUDENT_BASTIONS[$student]}"
-    echo "    Password: ${STUDENT_PASSWORDS[$student]}"
     echo "    Console: ${STUDENT_CONSOLES[$student]}"
+    echo "    Password: (available in ~/Development/agnosticd-v2-output/$student/provision-user-info.yaml)"
     echo ""
 done
 
