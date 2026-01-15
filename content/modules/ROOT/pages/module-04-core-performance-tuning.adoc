@@ -146,6 +146,25 @@ bash ~/low-latency-performance-workshop/scripts/module04-create-performance-prof
 The script will automatically detect your instance type and validate RT kernel requirements. If you attempt to enable RT kernel on a virtualized instance, the script will fail with a clear error message explaining the requirements.
 ====
 
+[WARNING]
+====
+**SNO-Specific Considerations:**
+
+For Single Node OpenShift (SNO) clusters, applying a Performance Profile will cause the **entire cluster to reboot**, making the API server unavailable for 10-20 minutes.
+
+**Automatic Optimizations for Virtualized Instances:**
+* The scripts automatically detect virtualized instances (e.g., `m5.4xlarge`)
+* For virtualized instances, the `nosmt` kernel parameter is **automatically skipped** to preserve hyperthreading
+* CPU allocation is automatically adjusted to be more conservative, reserving more CPUs for the control plane
+* This ensures the API server can start successfully after reboot
+
+**If Your Node Gets Stuck After Reboot:**
+* Wait 20-30 minutes - configuration may still be applying
+* Check AWS instance status: `aws ec2 describe-instance-status --instance-ids <id>`
+* If node doesn't recover, delete the Performance Profile and recreate with more conservative settings
+* See the "Troubleshooting Common Issues" section for detailed recovery steps
+====
+
 . Determine optimal CPU allocation based on your cluster type:
 +
 [source,bash,role=execute]
@@ -228,13 +247,27 @@ Then retry the Performance Profile creation.
 
 The Performance Profile will trigger a rolling update of your nodes. This process includes applying CPU isolation, HugePages, NUMA tuning, and (if enabled) installing the real-time kernel. The monitoring approach varies by cluster architecture.
 
-[NOTE]
+[IMPORTANT]
 ====
-**RT Kernel Installation (if enabled):**
+**Node Reboot Required:**
 
-If you enabled RT kernel, the node will reboot during the update process to load the real-time kernel. This is expected behavior and may take 10-20 minutes. The node will automatically rejoin the cluster after reboot.
+The Performance Profile applies kernel boot parameters (CPU isolation, HugePages, NUMA tuning) which **always require a node reboot**, regardless of RT kernel setting. The Machine Config Pool (MCP) will automatically trigger the reboot.
 
-If RT kernel is disabled (default), the update process is faster and does not require a reboot - only kernel parameters are adjusted.
+**Expected Timeline:**
+* **SNO Clusters**: API server will be unavailable for 10-20 minutes during reboot
+* **Multi-Node Clusters**: Rolling update, one node at a time (10-20 minutes per node)
+* **RT Kernel Enabled**: Additional 5-10 minutes for RT kernel installation
+
+**SNO-Specific Considerations:**
+* The entire cluster (API server) will be unavailable during the reboot
+* Plan for 15-30 minutes of downtime
+* Monitor the node status: `oc get nodes` (will show `NotReady` during reboot)
+* After reboot, wait for the node to show `Ready` status before proceeding
+
+**Virtualized Instance Optimization:**
+* For virtualized AWS instances (e.g., `m5.4xlarge`), the `nosmt` kernel parameter is automatically skipped
+* This preserves hyperthreading and ensures sufficient CPUs remain for the control plane
+* CPU allocation is automatically adjusted to be more conservative for virtualized instances
 ====
 
 . Monitor Machine Config Pool status:
@@ -1065,6 +1098,54 @@ oc debug node/$TARGET_NODE -- chroot /host cat /proc/cmdline 2>/dev/null | grep 
 echo ""
 echo "📋 Performance Profile HugePages Spec:"
 oc get performanceprofile $PROFILE_NAME -o jsonpath='{.spec.hugepages}' | jq '.' 2>/dev/null || echo "   Unable to read Performance Profile HugePages spec"
+----
+
+.*Node Stuck After Reboot (API Server Not Starting)*
+If the node reboots but the API server doesn't come back up (SNO) or node remains NotReady:
+
+[source,bash,role=execute]
+----
+# Load cluster configuration
+source /tmp/cluster-config
+
+echo "=== Node Stuck After Reboot Troubleshooting ==="
+echo "Cluster type: $CLUSTER_TYPE"
+echo "Target node: $TARGET_NODE"
+echo "Instance type: ${INSTANCE_TYPE:-unknown}"
+
+# Check node status
+echo ""
+echo "📋 Node Status:"
+oc get node $TARGET_NODE -o wide 2>/dev/null || echo "   ❌ Cannot reach API server (node may be rebooting)"
+
+# Check AWS instance status (if AWS CLI available)
+if command -v aws &> /dev/null; then
+    echo ""
+    echo "📋 AWS Instance Status:"
+    INSTANCE_ID=$(aws ec2 describe-instances \
+        --filters "Name=private-ip-address,Values=$(oc get node $TARGET_NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo 'unknown')" \
+        --query 'Reservations[*].Instances[*].[InstanceId,State.Name]' \
+        --output text 2>/dev/null | head -1)
+    if [ -n "$INSTANCE_ID" ]; then
+        echo "   Instance: $INSTANCE_ID"
+        aws ec2 describe-instance-status --instance-ids $INSTANCE_ID \
+            --query 'InstanceStatuses[*].[SystemStatus.Status,InstanceStatus.Status]' \
+            --output table 2>/dev/null || echo "   Unable to check AWS status"
+    fi
+fi
+
+echo ""
+echo "💡 Common Causes:"
+echo "   1. CPU isolation too aggressive - not enough CPUs for control plane"
+echo "   2. nosmt parameter on virtualized instance - halves available CPUs"
+echo "   3. Insufficient memory after HugePages allocation"
+echo ""
+echo "🔧 Recovery Options:"
+echo "   1. Wait 20-30 minutes - node may still be applying configuration"
+echo "   2. Reboot instance: aws ec2 reboot-instances --instance-ids <instance-id>"
+echo "   3. Delete Performance Profile and recreate with more conservative settings:"
+echo "      oc delete performanceprofile $PROFILE_NAME"
+echo "      # Then re-run CPU allocation calculator and profile creator"
 ----
 
 .*Performance Profile Not Applied*

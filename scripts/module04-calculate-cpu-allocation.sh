@@ -270,14 +270,33 @@ calculate_sno_allocation() {
     echo "   - Target ~60-75% isolation for performance demonstration"
     echo ""
     
-    if [ "$cpu_count" -gt 16 ]; then
+    # Check if this is a virtualized instance (m5.4xlarge, etc.)
+    # For virtualized instances, we need to be more conservative since nosmt won't be used
+    # and we need to account for hyperthreading
+    if [ "${IS_METAL_INSTANCE:-false}" = "false" ] && [ "$cpu_count" -eq 16 ]; then
+        # Special case: m5.4xlarge (16 vCPUs, 8 physical cores with HT)
+        # Reserve 6 CPUs (0-5) for control plane, isolate 10 CPUs (6-15)
+        # This is more conservative to ensure API server can start
+        RESERVED_COUNT=6
+        echo "   - Virtualized instance ($cpu_count vCPUs): Reserve $RESERVED_COUNT CPUs (~37.5%) for control plane stability"
+        echo "   - Note: Without nosmt, hyperthreading is enabled, so more CPUs available for system"
+    elif [ "$cpu_count" -gt 16 ]; then
         # High CPU count (32+ cores): Reserve ~40% for system, isolate ~60%
         RESERVED_COUNT=$((cpu_count * 40 / 100))
         echo "   - High CPU count ($cpu_count cores): Reserve $RESERVED_COUNT CPUs (~40%) for system stability"
     elif [ "$cpu_count" -gt 8 ]; then
-        # Medium CPU count (16+ cores): Reserve ~50% for system, isolate ~50%
-        RESERVED_COUNT=$((cpu_count / 2))
-        echo "   - Medium CPU count ($cpu_count cores): Reserve $RESERVED_COUNT CPUs (~50%) for system stability"
+        # Medium CPU count (16+ cores): Reserve ~37.5% for system, isolate ~62.5%
+        # More conservative for virtualized instances
+        if [ "${IS_METAL_INSTANCE:-false}" = "false" ]; then
+            # Virtualized: Reserve more for control plane
+            RESERVED_COUNT=$((cpu_count * 37 / 100))
+            if [ "$RESERVED_COUNT" -lt 6 ]; then RESERVED_COUNT=6; fi
+            echo "   - Medium CPU count virtualized ($cpu_count cores): Reserve $RESERVED_COUNT CPUs (~37.5%) for system stability"
+        else
+            # Bare-metal: Can be more aggressive
+            RESERVED_COUNT=$((cpu_count / 2))
+            echo "   - Medium CPU count bare-metal ($cpu_count cores): Reserve $RESERVED_COUNT CPUs (~50%) for system stability"
+        fi
     elif [ "$cpu_count" -gt 4 ]; then
         # Lower CPU count (8+ cores): Reserve ~60% for system, isolate ~40%
         RESERVED_COUNT=$((cpu_count * 60 / 100))

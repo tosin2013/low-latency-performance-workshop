@@ -306,8 +306,18 @@ TEMP_FILE=$(mktemp)
 trap "rm -f $TEMP_FILE" EXIT
 
 # Generate Performance Profile YAML
-# Build kernel args conditionally based on RT kernel setting
-KERNEL_ARGS=("nosmt")
+# Build kernel args conditionally based on instance type and RT kernel setting
+KERNEL_ARGS=()
+
+# Only add nosmt for bare-metal instances
+# For virtualized instances, nosmt disables hyperthreading which halves available CPUs
+# This can cause control plane to fail due to insufficient resources
+if [ "$IS_METAL_INSTANCE" = "true" ]; then
+    KERNEL_ARGS+=("nosmt")
+    info "Adding 'nosmt' kernel parameter (bare-metal instance)"
+else
+    info "Skipping 'nosmt' kernel parameter (virtualized instance - preserves hyperthreading)"
+fi
 
 if [ "$ENABLE_RT_KERNEL" = "true" ]; then
     # RT kernel specific args
