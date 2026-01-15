@@ -211,8 +211,8 @@ The `kubeadmin` password is unique for each cluster deployment.
 +
 [source,bash,role=execute]
 ----
-# On the bastion, read the kubeadmin password
-cat ~/ocp/auth/kubeadmin-password
+# On the bastion (as lab-user), read the kubeadmin password
+cat ~/kubeadmin-password
 ----
 
 [WARNING]
@@ -234,7 +234,7 @@ oc whoami
 # If you need to login as kubeadmin instead:
 oc login {openshift_api_url} \
     -u kubeadmin \
-    -p $(cat ~/ocp/auth/kubeadmin-password)
+    -p $(cat ~/kubeadmin-password)
 ----
 
 . Login from outside the bastion:
@@ -274,7 +274,7 @@ oc get namespaces
 2. Navigate to: `{openshift_console_url}`
 3. Select "kubeadmin" as the authentication method
 4. Enter username: `kubeadmin`
-5. Enter password: (from `cat ~/ocp/auth/kubeadmin-password` on bastion)
+5. Enter password: (from `cat ~/kubeadmin-password` on bastion)
 6. Click "Log In"
 
 [NOTE]
@@ -294,7 +294,7 @@ On first login, you may be prompted to change the `kubeadmin` password. This is 
 oc get nodes -o jsonpath='{.items[0].metadata.name}'
 
 # Get kubeadmin password
-cat ~/ocp/auth/kubeadmin-password
+cat ~/kubeadmin-password
 
 # Check cluster status
 oc get clusterversion
@@ -338,7 +338,7 @@ ssh -v {bastion_ssh_user_name}@{bastion_public_hostname}
 curl -k -I {openshift_console_url}
 
 # Get the kubeadmin password from bastion
-ssh {bastion_ssh_user_name}@{bastion_public_hostname} "cat ~/ocp/auth/kubeadmin-password"
+ssh {bastion_ssh_user_name}@{bastion_public_hostname} "cat ~/kubeadmin-password"
 ----
 
 === Cannot Login with oc CLI
@@ -380,7 +380,7 @@ Password: `{bastion_ssh_password}`
 | **Web Console**
 | URL: `{openshift_console_url}` +
 Username: `kubeadmin` +
-Password: Run `cat ~/ocp/auth/kubeadmin-password` on bastion
+Password: Run `cat ~/kubeadmin-password` on bastion
 
 | **API Access**
 | URL: `{openshift_api_url}` +

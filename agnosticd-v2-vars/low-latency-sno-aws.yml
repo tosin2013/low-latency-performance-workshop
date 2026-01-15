@@ -114,6 +114,16 @@ install_bastion: true
 bastion_setup_student_user: true
 bastion_student_user_name: lab-user
 
+# Copy kubeadmin password and kubeconfig to lab-user's home directory
+# This makes cluster credentials accessible to workshop participants
+bastion_student_user_copy_files:
+  - src: /home/ec2-user/ocp/auth/kubeadmin-password
+    dest: /home/lab-user/kubeadmin-password
+    mode: '0644'
+  - src: /home/ec2-user/ocp/auth/kubeconfig
+    dest: /home/lab-user/.kube/config
+    mode: '0600'
+
 # SSH Keys
 host_ssh_authorized_keys:
   - key: https://github.com/tosin2013.keys
