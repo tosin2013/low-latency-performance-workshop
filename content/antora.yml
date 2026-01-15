@@ -25,6 +25,8 @@ asciidoc:
     openshift_api_url: https://api.ocp.student1.sandbox5466.opentlc.com:6443
     openshift_console_url: https://console-openshift-console.apps.ocp.student1.sandbox5466.opentlc.com
     openshift_cluster_ingress_domain: apps.ocp.student1.sandbox5466.opentlc.com
+    # kubeadmin password - available on bastion at ~/ocp/auth/kubeadmin-password
+    openshift_kubeadmin_password: "Available on bastion: cat ~/ocp/auth/kubeadmin-password"
     # Dev Spaces (optional)
     devspaces_url: https://devspaces.apps.example.sandbox.opentlc.com
     devspaces_factory: https://devspaces.apps.example.sandbox.opentlc.com/dashboard/#/load-factory?url=https://github.com/tosin2013/low-latency-performance-workshop

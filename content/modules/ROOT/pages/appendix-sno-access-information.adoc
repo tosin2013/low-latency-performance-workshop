@@ -1,0 +1,398 @@
+= Appendix: SNO Cluster Access Information
+
+[%hardbreaks]
+== Overview
+
+This appendix provides comprehensive access information for your Single Node OpenShift (SNO) cluster, including SSH connection details, node information, console access, and credentials.
+
+== Quick Reference
+
+[cols="1,2"]
+|===
+| **Item** | **Value**
+
+| **Bastion SSH Host**
+| `{bastion_public_hostname}`
+
+| **Bastion Username**
+| `{bastion_ssh_user_name}`
+
+| **Bastion Password**
+| `{bastion_ssh_password}`
+
+| **Console URL**
+| `{openshift_console_url}`
+
+| **API URL**
+| `{openshift_api_url}`
+
+| **kubeadmin Username**
+| `kubeadmin`
+
+| **kubeadmin Password**
+| `{openshift_kubeadmin_password}`
+|===
+
+== SSH Access Information
+
+=== Bastion Host Connection
+
+The bastion host provides SSH access to your SNO cluster environment. The bastion has `oc`, `kubectl`, and KUBECONFIG pre-configured.
+
+[cols="1,2"]
+|===
+| SSH Host | `{bastion_public_hostname}`
+| Username | `{bastion_ssh_user_name}`
+| Password | `{bastion_ssh_password}`
+|===
+
+. Connect to your bastion host:
++
+[source,bash,role=execute,subs="attributes"]
+----
+ssh {bastion_ssh_user_name}@{bastion_public_hostname}
+----
++
+Enter the password when prompted: `{bastion_ssh_password}`
+
+[TIP]
+====
+Once connected to the bastion, you can immediately run cluster commands - no additional login required. The bastion is pre-authenticated as `system:admin`.
+====
+
+=== Verify Connection
+
+After connecting to the bastion:
+
+[source,bash,role=execute]
+----
+# Verify cluster access (already authenticated as system:admin)
+oc whoami
+oc get nodes
+----
+
+Expected output:
+* User: `system:admin`
+* One node in `Ready` state with roles `control-plane,master,worker`
+
+== SNO Node Information
+
+=== Getting Node Name
+
+The SNO cluster has a single node that serves as both control plane and worker.
+
+. Get the SNO node name:
++
+[source,bash,role=execute]
+----
+# From the bastion (already authenticated)
+oc get nodes
+
+# Or get just the node name
+oc get nodes -o jsonpath='{.items[0].metadata.name}'
+----
++
+Expected output: A single node with roles `control-plane,master,worker`
+
+=== Node Details
+
+. Get detailed node information:
++
+[source,bash,role=execute]
+----
+# Get the node name first
+TARGET_NODE=$(oc get nodes -o jsonpath='{.items[0].metadata.name}')
+echo "Target node: $TARGET_NODE"
+
+# Get comprehensive node information
+oc describe node $TARGET_NODE
+
+# Get node roles and labels
+oc get node $TARGET_NODE --show-labels
+
+# Get node IP addresses
+oc get node $TARGET_NODE -o jsonpath='{.status.addresses[*].address}'
+----
+
+=== Node Resource Information
+
+. Get CPU and memory information:
++
+[source,bash,role=execute]
+----
+# Load node name
+TARGET_NODE=$(oc get nodes -o jsonpath='{.items[0].metadata.name}')
+
+# Get CPU topology
+oc debug node/$TARGET_NODE -- chroot /host lscpu | grep -E "(CPU\(s\)|Thread|Core|Socket|NUMA)"
+
+# Get memory information
+oc debug node/$TARGET_NODE -- chroot /host free -h
+
+# Get node capacity and allocatable resources
+oc describe node $TARGET_NODE | grep -E "(Capacity:|Allocatable:)" -A 10
+----
+
+=== Node Status
+
+. Check node health and status:
++
+[source,bash,role=execute]
+----
+# Get node status
+oc get nodes -o wide
+
+# Get node conditions
+oc get node $(oc get nodes -o jsonpath='{.items[0].metadata.name}') \
+    -o jsonpath='{.status.conditions[*].type}{"\n"}{.status.conditions[*].status}'
+
+# Check for any node issues
+oc get events --field-selector involvedObject.kind=Node --sort-by='.lastTimestamp' | tail -10
+----
+
+== Console and API Access
+
+=== Console URL
+
+The OpenShift web console provides a graphical interface for managing your cluster.
+
+**Your Console URL:** `{openshift_console_url}`
+
+. Access the console:
++
+* Open a web browser
+* Navigate to: `{openshift_console_url}`
+* Log in with `kubeadmin` and the password (see Credentials section)
+
+[TIP]
+====
+**Browser Certificate Warning**
+
+You may see a certificate warning when first accessing the console. This is normal for self-signed certificates. Click "Advanced" and "Proceed to site" to continue.
+====
+
+=== API URL
+
+The OpenShift API endpoint is used by the `oc` CLI and other tools.
+
+**Your API URL:** `{openshift_api_url}`
+
+. Use the API URL with `oc` CLI:
++
+[source,bash,role=execute,subs="attributes"]
+----
+# Login using API URL (from outside the bastion)
+oc login {openshift_api_url} \
+    -u kubeadmin \
+    -p <your-kubeadmin-password>
+
+# Verify connection
+oc whoami
+oc get nodes
+----
+
+== Credentials
+
+=== kubeadmin Username
+
+The default administrator username for OpenShift is `kubeadmin`.
+
+**Username:** `kubeadmin`
+
+This is the standard username for initial cluster access and does not change.
+
+=== kubeadmin Password
+
+The `kubeadmin` password is unique for each cluster deployment.
+
+**Password Location:** `{openshift_kubeadmin_password}`
+
+. Retrieve the kubeadmin password from the bastion:
++
+[source,bash,role=execute]
+----
+# On the bastion, read the kubeadmin password
+cat ~/ocp/auth/kubeadmin-password
+----
+
+[WARNING]
+====
+**Password Security**
+
+The `kubeadmin` password provides full cluster administrator access. Keep it secure and do not share it publicly. After initial setup, consider creating additional users with appropriate roles.
+====
+
+=== CLI Login Instructions
+
+. Login to the cluster using `oc` CLI (from bastion - already authenticated):
++
+[source,bash,role=execute]
+----
+# On the bastion, you're already authenticated as system:admin
+oc whoami
+
+# If you need to login as kubeadmin instead:
+oc login {openshift_api_url} \
+    -u kubeadmin \
+    -p $(cat ~/ocp/auth/kubeadmin-password)
+----
+
+. Login from outside the bastion:
++
+[source,bash,role=execute,subs="attributes"]
+----
+# Interactive login (will prompt for password)
+oc login {openshift_api_url} -u kubeadmin
+# Enter password when prompted
+
+# Or with password directly
+oc login {openshift_api_url} \
+    -u kubeadmin \
+    -p <your-kubeadmin-password>
+----
+
+. Verify authentication:
++
+[source,bash,role=execute]
+----
+# Check current user
+oc whoami
+
+# Check API server
+oc whoami --show-server
+
+# Verify cluster access
+oc get nodes
+oc get namespaces
+----
+
+=== Web Console Login
+
+. Access the web console:
++
+1. Open your web browser
+2. Navigate to: `{openshift_console_url}`
+3. Select "kubeadmin" as the authentication method
+4. Enter username: `kubeadmin`
+5. Enter password: (from `cat ~/ocp/auth/kubeadmin-password` on bastion)
+6. Click "Log In"
+
+[NOTE]
+====
+**First Login**
+
+On first login, you may be prompted to change the `kubeadmin` password. This is optional but recommended for security.
+====
+
+== Common Commands
+
+. Quick access commands (run from bastion):
++
+[source,bash,role=execute]
+----
+# Get node name
+oc get nodes -o jsonpath='{.items[0].metadata.name}'
+
+# Get kubeadmin password
+cat ~/ocp/auth/kubeadmin-password
+
+# Check cluster status
+oc get clusterversion
+oc get nodes
+oc get co  # cluster operators
+----
+
+. SSH to bastion (from your local machine):
++
+[source,bash,role=execute,subs="attributes"]
+----
+ssh {bastion_ssh_user_name}@{bastion_public_hostname}
+# Password: {bastion_ssh_password}
+----
+
+== Troubleshooting Access Issues
+
+=== Cannot Connect to Bastion
+
+. Troubleshooting steps:
++
+[source,bash,role=execute,subs="attributes"]
+----
+# Verify bastion hostname is correct
+ping -c 3 {bastion_public_hostname}
+
+# Check SSH connectivity with verbose output
+ssh -v {bastion_ssh_user_name}@{bastion_public_hostname}
+
+# Verify you're using the correct password
+# Password: {bastion_ssh_password}
+----
+
+=== Cannot Access Console
+
+. Troubleshooting steps:
++
+[source,bash,role=execute,subs="attributes"]
+----
+# Verify console URL is correct
+curl -k -I {openshift_console_url}
+
+# Get the kubeadmin password from bastion
+ssh {bastion_ssh_user_name}@{bastion_public_hostname} "cat ~/ocp/auth/kubeadmin-password"
+----
+
+=== Cannot Login with oc CLI
+
+. Troubleshooting steps:
++
+[source,bash,role=execute,subs="attributes"]
+----
+# Verify API URL is accessible
+curl -k {openshift_api_url}
+
+# Try interactive login to see error messages
+oc login {openshift_api_url} -u kubeadmin
+
+# From bastion, verify cluster is accessible
+ssh {bastion_ssh_user_name}@{bastion_public_hostname} "oc get nodes"
+----
+
+[NOTE]
+====
+**Getting Help**
+
+If you continue to experience access issues, contact your workshop administrator with:
+* Your username: `{student_name}`
+* The specific error message
+* Output from the troubleshooting commands above
+====
+
+== Summary
+
+[cols="2,3"]
+|===
+| **Access Type** | **Details**
+
+| **SSH to Bastion**
+| `ssh {bastion_ssh_user_name}@{bastion_public_hostname}` +
+Password: `{bastion_ssh_password}`
+
+| **Web Console**
+| URL: `{openshift_console_url}` +
+Username: `kubeadmin` +
+Password: Run `cat ~/ocp/auth/kubeadmin-password` on bastion
+
+| **API Access**
+| URL: `{openshift_api_url}` +
+Login: `oc login {openshift_api_url} -u kubeadmin`
+
+| **Pre-configured Access**
+| On bastion, `oc` commands work immediately (authenticated as `system:admin`)
+|===
+
+[TIP]
+====
+**Best Practice**
+
+The easiest workflow is to SSH to the bastion and run all `oc` commands from there. The bastion is pre-configured with cluster access, so you don't need to worry about authentication or kubeconfig files.
+====

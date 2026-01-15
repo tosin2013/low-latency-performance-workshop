@@ -41,7 +41,7 @@ requirements_content:
 aws_region: us-east-2
 
 cloud_tags:
-  - owner: user@example.com
+  - owner: takinosh@redhat.com
   - Purpose: low-latency-workshop
   - config: openshift-cluster
   - guid: "{{ guid }}"
@@ -115,6 +115,8 @@ bastion_setup_student_user: true
 bastion_student_user_name: lab-user
 
 # SSH Keys
+host_ssh_authorized_keys:
+  - key: https://github.com/tosin2013.keys
 
 # ===================================================================
 # Repository Configuration

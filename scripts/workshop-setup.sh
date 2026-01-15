@@ -26,7 +26,18 @@ NC='\033[0m' # No Color
 # Default paths
 DEVELOPMENT_DIR="${HOME}/Development"
 AGNOSTICD_DIR="${DEVELOPMENT_DIR}/agnosticd-v2"
-WORKSHOP_DIR="${DEVELOPMENT_DIR}/low-latency-performance-workshop"
+
+# Detect workshop directory - use current directory if we're running from the workshop
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DETECTED_WORKSHOP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Use detected workshop directory if it contains agnosticd-v2-vars, otherwise use default
+if [[ -d "${DETECTED_WORKSHOP_DIR}/agnosticd-v2-vars" ]]; then
+  WORKSHOP_DIR="$DETECTED_WORKSHOP_DIR"
+else
+  WORKSHOP_DIR="${DEVELOPMENT_DIR}/low-latency-performance-workshop"
+fi
+
 VARS_DIR="${DEVELOPMENT_DIR}/agnosticd-v2-vars"
 SECRETS_DIR="${DEVELOPMENT_DIR}/agnosticd-v2-secrets"
 OUTPUT_DIR="${DEVELOPMENT_DIR}/agnosticd-v2-output"
@@ -171,6 +182,7 @@ else
 fi
 
 # Note: Workshop repo is assumed to be already cloned (we're running from it)
+print_info "Workshop directory: $WORKSHOP_DIR"
 if [[ ! -d "$WORKSHOP_DIR" ]]; then
   print_warning "Workshop directory not found at $WORKSHOP_DIR"
   print_info "If you want to clone it:"

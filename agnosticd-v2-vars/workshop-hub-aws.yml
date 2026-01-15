@@ -42,7 +42,7 @@ requirements_content:
 aws_region: us-east-2
 
 cloud_tags:
-  - owner: user@example.com
+  - owner: takinosh@redhat.com
   - Purpose: low-latency-workshop-hub
   - config: openshift-cluster
   - guid: "{{ guid }}"
@@ -101,7 +101,7 @@ ocp4_workload_cert_manager_channel: stable-v1
 ocp4_workload_cert_manager_provider: letsencrypt
 # Let's Encrypt email (required for account registration and notifications)
 # Set this in secrets file or pass as extra var: -e "ocp4_workload_cert_manager_email=your-email@example.com"
-ocp4_workload_cert_manager_email: "{{ ocp4_workload_cert_manager_email | default('admin@example.com') }}"
+ocp4_workload_cert_manager_email: "{{ ocp4_workload_cert_manager_email | default('tosin2013@example.com') }}"
 ocp4_workload_cert_manager_aws_region: "{{ aws_region }}"
 ocp4_workload_cert_manager_aws_access_key_id: "{{ aws_access_key_id }}"
 ocp4_workload_cert_manager_aws_secret_access_key: "{{ aws_secret_access_key }}"
