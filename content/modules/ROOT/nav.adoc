@@ -48,3 +48,11 @@
 ** xref:module-08-conclusion.adoc#applying-these-techniques-in-your-environment[Applying These Techniques]
 ** xref:module-08-conclusion.adoc#common-use-cases[Common Use Cases]
 ** xref:module-08-conclusion.adoc#next-steps[Next Steps]
+
+* xref:appendix-sno-access-information.adoc[Appendix: SNO Access Information]
+** xref:appendix-sno-access-information.adoc#quick-reference[Quick Reference]
+** xref:appendix-sno-access-information.adoc#ssh-access-information[SSH Access]
+** xref:appendix-sno-access-information.adoc#sno-node-information[SNO Node Information]
+** xref:appendix-sno-access-information.adoc#console-and-api-access[Console and API Access]
+** xref:appendix-sno-access-information.adoc#credentials[Credentials]
+** xref:appendix-sno-access-information.adoc#troubleshooting-access-issues[Troubleshooting]
