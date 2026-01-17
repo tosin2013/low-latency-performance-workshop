@@ -1,0 +1,45 @@
+---
+# Test VM for OpenShift Virtualization Validation
+# This is a minimal VM used to verify that OpenShift Virtualization
+# is working correctly after deployment.
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: validation-test-vm
+  namespace: default
+  labels:
+    app: sno-validation
+    purpose: testing
+spec:
+  running: false
+  template:
+    metadata:
+      labels:
+        app: sno-validation
+        purpose: testing
+    spec:
+      domain:
+        devices:
+          disks:
+          - name: containerdisk
+            disk:
+              bus: virtio
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 1
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - name: containerdisk
+        containerDisk:
+          image: quay.io/kubevirt/cirros-container-disk-demo:latest
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |
+            #!/bin/sh
+            echo "Validation test VM booted successfully"
+            # Keep VM running for validation
+            while true; do sleep 3600; done

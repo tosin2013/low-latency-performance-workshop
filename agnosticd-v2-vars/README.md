@@ -105,6 +105,96 @@ If you need Real-Time (RT) kernel support in Module 4, you can uncomment a metal
 
 **Note:** Pricing is approximate and may vary by region. Check current pricing at [AWS EC2 Pricing](https://aws.amazon.com/ec2/pricing/on-demand/).
 
+### `low-latency-sno-dev.yml`
+
+Development/Test SNO cluster configuration for validating workshop functionality before deploying to production/student environments.
+
+**Key Features:**
+- Single node cluster (1 control plane, 0 workers)
+- Easy instance type toggle (virtualized vs bare-metal)
+- Automated post-deployment validation
+- Test VM creation to verify OpenShift Virtualization
+- Clear feedback on emulation requirements
+
+**Instance Type Options:**
+
+| Instance Type | KVM Mode | Emulation | Cost/hr (us-east-2) | Use Case |
+|---------------|----------|-----------|---------------------|----------|
+| **m5.4xlarge** (default) | Software emulation | Required | ~$0.77 | Test virtualized setup |
+| **m5zn.metal** (bare-metal default) | Native hardware KVM | Not needed | ~$3.96 | Test bare-metal setup |
+
+**Bare-Metal Instance Selection:**
+
+When using the `baremetal` parameter, the dev config uses **m5zn.metal** by default. This is the recommended bare-metal instance for testing:
+- 48 vCPUs, 192 GiB RAM
+- Best latency, smallest metal instance
+- Cost: ~$3.96/hour (us-east-2)
+
+**Alternative Bare-Metal Options:**
+
+The config file also includes commented alternatives that you can uncomment if needed:
+
+| Instance Type | vCPUs | RAM | Cost/hr (us-east-2) | Best For |
+|---------------|-------|-----|---------------------|----------|
+| **m5zn.metal** (default) | 48 | 192 GiB | ~$3.96 | Best latency, smallest metal |
+| c5.metal | 96 | 192 GiB | ~$4.08 | CPU-intensive workloads |
+| c5n.metal | 72 | 192 GiB | ~$3.89 | Network-intensive workloads |
+| m5.metal | 96 | 384 GiB | ~$4.61 | Balanced workloads, more memory |
+| c7i.metal-24xl | 96 | 192 GiB | ~$4.28 | Latest generation performance |
+
+To use an alternative bare-metal instance, edit `low-latency-sno-dev.yml` and uncomment the desired instance type.
+
+**Deployment Order:** Can be deployed independently for testing
+
+**Usage:**
+```bash
+# Deploy dev SNO with m5.4xlarge (virtualized, needs emulation)
+cd ~/low-latency-performance-workshop
+./scripts/deploy-sno-dev.sh dev1 sandbox3576 virtualized
+
+# Deploy dev SNO with bare-metal (m5zn.metal, native KVM, no emulation)
+./scripts/deploy-sno-dev.sh dev1 sandbox3576 baremetal
+
+# Or use AgnosticD directly:
+cd ~/Development/agnosticd-v2
+./bin/agd provision -g dev1 -c low-latency-sno-dev -a sandbox3576
+```
+
+**Post-Deployment Validation:**
+
+After deployment, the validation script automatically runs checks to verify:
+- ✅ OpenShift Virtualization operator is running
+- ✅ KVM emulation is correctly configured (for virtualized instances)
+- ✅ Test VM can be created and boots successfully
+- ✅ Cert Manager operator is working
+- ✅ Node health is good
+
+**Manual Validation:**
+```bash
+# Run validation manually
+export KUBECONFIG=~/Development/agnosticd-v2-output/dev1/openshift-cluster_dev1_kubeconfig
+./scripts/validate-sno-dev.sh dev1 virtualized
+
+# Check validation results
+oc get configmap sno-validation-results -n default -o yaml
+```
+
+**When to Use Dev Config:**
+
+- **Before student deployments**: Validate that all workshop features work correctly
+- **Testing instance types**: Verify m5.4xlarge emulation vs bare-metal native KVM
+- **Troubleshooting**: Isolate issues with OpenShift Virtualization or other operators
+- **Development**: Test configuration changes before applying to production
+
+**Differences from Production Config:**
+
+| Feature | Production (`low-latency-sno-aws.yml`) | Dev (`low-latency-sno-dev.yml`) |
+|---------|--------------------------------------|--------------------------------|
+| Purpose | Student deployments | Development/testing |
+| Instance toggle | Manual edit required | Command-line parameter |
+| Validation | Manual | Automated post-deploy |
+| Test VM | Not created | Created and verified |
+| Emulation check | Manual | Automated |
 
 ## Deployment Workflow
 

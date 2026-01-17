@@ -1,0 +1,209 @@
+---
+# ===================================================================
+# Low-Latency Performance Workshop - Development/Test SNO Deployment
+# Hub + Spoke Architecture - Development Cluster
+# ===================================================================
+# This configuration deploys a Single Node OpenShift (SNO) cluster
+# for development and testing purposes. It includes automated
+# post-deployment validation to verify all workshop features work
+# correctly before deploying to production/student environments.
+#
+# KEY DIFFERENCES FROM PRODUCTION (low-latency-sno-aws.yml):
+#   - Easy instance type toggle (virtualized vs bare-metal)
+#   - Automated validation job runs after deployment
+#   - Test VM creation to verify OpenShift Virtualization works
+#   - Clear feedback on emulation requirements
+#
+# ARCHITECTURE:
+#   - This is a "Spoke" cluster for testing
+#   - Workshop documentation (Showroom) is hosted on a separate Hub cluster
+#   - This cluster may reboot during Module 4 (Performance Profile) testing
+#   - Used to validate functionality before student deployments
+#
+# DEPLOYMENT ORDER:
+#   - Can be deployed independently for testing
+#   - Does not require Hub cluster (unless testing Showroom integration)
+#
+# ===================================================================
+
+# ===================================================================
+# Mandatory Variables (agnosticd-v2)
+# ===================================================================
+cloud_provider: aws
+cloud_provider_version: main
+config: openshift-cluster
+
+# ===================================================================
+# Collections (agnosticd-v2 best practice)
+# ===================================================================
+requirements_content:
+  collections:
+  - name: https://github.com/agnosticd/core_workloads.git
+    type: git
+    version: main
+
+# ===================================================================
+# AWS Configuration
+# ===================================================================
+aws_region: us-east-2
+
+cloud_tags:
+  - owner: takinosh@redhat.com
+  - Purpose: low-latency-workshop-dev
+  - config: openshift-cluster
+  - guid: "{{ guid }}"
+
+# ===================================================================
+# SNO Configuration (1 control plane, 0 workers = SNO)
+# ===================================================================
+control_plane_instance_count: 1
+worker_instance_count: 0
+
+# ===================================================================
+# Instance Type Configuration - DEV/TEST TOGGLE
+# ===================================================================
+# IMPORTANT: Choose ONE instance type based on what you want to test
+#
+# OPTION 1: Virtualized Instance (m5.4xlarge) - DEFAULT
+# ===================================================================
+# - Uses software KVM emulation (required for OpenShift Virtualization)
+# - Cost: ~$0.77/hour (us-east-2)
+# - Supports: CPU isolation, HugePages, NUMA tuning (Module 4)
+# - RT kernel: Disabled (not supported on virtualized instances)
+# - OpenShift Virt: Requires emulation enabled (use 'sno' GitOps overlay)
+# - Best for: Testing workshop functionality on cost-effective instances
+# - Validation: Will verify emulation is enabled
+control_plane_instance_type: m5.4xlarge
+
+# OPTION 2: Bare-Metal Instance (m5zn.metal) - UNCOMMENT TO USE
+# ===================================================================
+# - Uses native hardware KVM (no emulation needed)
+# - Cost: ~$3.96/hour (us-east-2)
+# - Supports: CPU isolation, HugePages, NUMA tuning, RT kernel (Module 4)
+# - RT kernel: Can be enabled (bare-metal requirement)
+# - OpenShift Virt: Uses native KVM (use 'standard' GitOps overlay)
+# - Best for: Testing RT kernel support and native KVM performance
+# - Validation: Will skip emulation check (not needed)
+# control_plane_instance_type: m5zn.metal
+
+# ALTERNATIVE Bare-Metal Options (uncomment if needed):
+# ===================================================================
+# c5.metal: 96 vCPUs, 192 GiB RAM, ~$4.08/hour
+# - Best for: CPU-intensive workloads
+# control_plane_instance_type: c5.metal
+#
+# c5n.metal: 72 vCPUs, 192 GiB RAM, 100 Gbps network, ~$3.89/hour
+# - Best for: Network-intensive workloads
+# control_plane_instance_type: c5n.metal
+#
+# m5.metal: 96 vCPUs, 384 GiB RAM, ~$4.61/hour
+# - Best for: Balanced workloads needing more memory
+# control_plane_instance_type: m5.metal
+#
+# c7i.metal-24xl: 96 vCPUs, 192 GiB RAM, ~$4.28/hour
+# - Best for: Latest generation performance
+# control_plane_instance_type: c7i.metal-24xl
+#
+# NOTE: Pricing is approximate and may vary by region and over time
+# Check current pricing at: https://aws.amazon.com/ec2/pricing/on-demand/
+# ===================================================================
+
+control_plane_storage_size: 200
+control_plane_storage_type: gp3
+
+# Installation method
+host_ocp4_deploy_installation_method: openshift_install
+host_ocp4_installer_version: "4.20"
+host_ocp4_installer_set_user_data_kubeadmin_password: true
+
+# ===================================================================
+# Bastion Configuration
+# ===================================================================
+install_bastion: true
+bastion_setup_student_user: true
+bastion_student_user_name: lab-user
+
+# Copy kubeadmin password and kubeconfig to lab-user's home directory
+# This makes cluster credentials accessible for testing
+bastion_student_user_copy_files:
+  - src: /home/ec2-user/ocp/auth/kubeadmin-password
+    dest: /home/lab-user/kubeadmin-password
+    mode: '0644'
+  - src: /home/ec2-user/ocp/auth/kubeconfig
+    dest: /home/lab-user/.kube/config
+    mode: '0600'
+
+# SSH Keys
+host_ssh_authorized_keys:
+  - key: https://github.com/tosin2013.keys
+
+# ===================================================================
+# Repository Configuration
+# ===================================================================
+install_satellite_repositories: false
+install_rhn_repositories: true
+
+# Required in secrets.yml:
+# host_satellite_repositories_hostname:
+# host_satellite_repositories_org:
+# host_satellite_repositories_activationkey:
+
+# ===================================================================
+# Workloads (all from core_workloads collection)
+# ===================================================================
+workloads:
+  # Core operators for workshop
+  - agnosticd.core_workloads.ocp4_workload_cert_manager
+  - agnosticd.core_workloads.ocp4_workload_openshift_virtualization
+  # NOTE: SR-IOV operator workload does not exist in core_workloads collection
+  # - agnosticd.core_workloads.ocp4_workload_sriov_network_operator
+  # NOTE: Showroom is NOT deployed here - it's hosted on the Hub cluster
+  # This ensures workshop docs remain available during Module 4 reboots
+
+# ===================================================================
+# Cert Manager Workload Configuration
+# ===================================================================
+ocp4_workload_cert_manager_channel: stable-v1
+ocp4_workload_cert_manager_provider: letsencrypt
+# Let's Encrypt email (required for account registration and notifications)
+# Set this in secrets file or pass as extra var: -e "ocp4_workload_cert_manager_email=your-email@example.com"
+ocp4_workload_cert_manager_email: "{{ ocp4_workload_cert_manager_email | default('admin@example.com') }}"
+ocp4_workload_cert_manager_aws_region: "{{ aws_region }}"
+ocp4_workload_cert_manager_aws_access_key_id: "{{ aws_access_key_id }}"
+ocp4_workload_cert_manager_aws_secret_access_key: "{{ aws_secret_access_key }}"
+# Enable SSL certificates for secure HTTPS access
+# Requires AWS credentials with Route53 permissions for DNS-01 challenge
+ocp4_workload_cert_manager_install_ingress_certificates: true
+# NOTE: API certificates disabled during initial deployment to avoid SSL verification
+# errors when AgnosticD connects before Let's Encrypt certificates are ready.
+# API will use default self-signed certificate (still secure, just not Let's Encrypt).
+# Ingress certificates are installed and will be available for console/apps access.
+ocp4_workload_cert_manager_install_api_certificates: false
+
+# ===================================================================
+# OpenShift Virtualization Workload Configuration
+# ===================================================================
+ocp4_workload_openshift_virtualization_channel: stable
+ocp4_workload_openshift_virtualization_wait_for_deploy: true
+
+# ===================================================================
+# SR-IOV Network Operator Workload Configuration
+# ===================================================================
+ocp4_workload_sriov_network_operator_channel: stable
+
+# ===================================================================
+# Post-Deployment Validation
+# ===================================================================
+# After deployment, run the validation script to verify:
+#   - OpenShift Virtualization operator is running
+#   - KVM emulation is correctly configured (for virtualized instances)
+#   - Test VM can be created and boots successfully
+#   - Cert Manager is working
+#   - All workshop features are ready
+#
+# Validation is performed by:
+#   ./scripts/validate-sno-dev.sh <guid>
+#
+# Or manually check validation results:
+#   oc get configmap sno-validation-results -n default -o yaml
+# ===================================================================

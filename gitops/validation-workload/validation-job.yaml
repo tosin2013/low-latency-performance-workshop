@@ -1,0 +1,366 @@
+---
+# Validation Job for SNO Development Clusters
+# 
+# NOTE: This is a standalone Kubernetes Job that does NOT require ArgoCD.
+# It can be applied directly with: oc apply -f validation-job.yaml
+#
+# This job performs comprehensive validation checks after deployment:
+#   - OpenShift Virtualization operator status
+#   - KVM emulation configuration (for virtualized instances)
+#   - Test VM creation and boot verification
+#   - Cert Manager operator status
+#   - Node health checks
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sno-validation
+  namespace: default
+  labels:
+    app: sno-validation
+    purpose: testing
+spec:
+  ttlSecondsAfterFinished: 3600  # Clean up after 1 hour
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: sno-validation
+        purpose: testing
+    spec:
+      restartPolicy: Never
+      serviceAccountName: sno-validation
+      containers:
+      - name: validation
+        image: quay.io/openshift/origin-cli:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          
+          # Setup in-cluster authentication for oc
+          # In OpenShift pods, oc automatically uses the service account token
+          # but we need to ensure the API server is accessible
+          if [ -z "${KUBERNETES_SERVICE_HOST:-}" ]; then
+            echo "Error: Not running in a Kubernetes pod"
+            exit 1
+          fi
+          
+          # Test oc connectivity
+          if ! oc whoami &>/dev/null; then
+            echo "Error: Cannot authenticate with cluster API"
+            echo "Service account: $(oc whoami 2>&1 || echo 'unknown')"
+            exit 1
+          fi
+          
+          # Colors for output
+          RED='\033[0;31m'
+          GREEN='\033[0;32m'
+          YELLOW='\033[1;33m'
+          BLUE='\033[0;34m'
+          CYAN='\033[0;36m'
+          NC='\033[0m' # No Color
+          
+          echo -e "${BLUE}============================================================${NC}"
+          echo -e "${BLUE}SNO Development Cluster Validation${NC}"
+          echo -e "${BLUE}============================================================${NC}"
+          echo ""
+          echo "Authenticated as: $(oc whoami)"
+          echo ""
+          
+          # Results tracking
+          RESULTS_DIR="/tmp/validation-results"
+          mkdir -p "$RESULTS_DIR"
+          PASSED=0
+          FAILED=0
+          WARNINGS=0
+          
+          # Function to log results
+          log_result() {
+            local status=$1
+            local check=$2
+            local message=$3
+            echo "$status|$check|$message" >> "$RESULTS_DIR/results.txt"
+            if [ "$status" = "PASS" ]; then
+              ((PASSED++))
+              echo -e "${GREEN}✓${NC} $check"
+            elif [ "$status" = "FAIL" ]; then
+              ((FAILED++))
+              echo -e "${RED}✗${NC} $check: $message"
+            else
+              ((WARNINGS++))
+              echo -e "${YELLOW}⚠${NC} $check: $message"
+            fi
+          }
+          
+          # 1. Check OpenShift Virtualization Operator
+          echo -e "${CYAN}1. Checking OpenShift Virtualization Operator...${NC}"
+          HCO_OUTPUT=$(oc get hyperconverged -n openshift-cnv 2>&1)
+          HCO_NAME=$(echo "$HCO_OUTPUT" | grep -v "^NAME" | awk '{print $1}' | head -1)
+          if [ -n "$HCO_NAME" ] && [ "$HCO_NAME" != "No resources found" ]; then
+            HCO_STATUS=$(oc get hyperconverged -n openshift-cnv "$HCO_NAME" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>&1 || echo "Unknown")
+            if [ "$HCO_STATUS" = "True" ]; then
+              log_result "PASS" "OpenShift Virtualization Operator" "HCO is available"
+            else
+              log_result "WARN" "OpenShift Virtualization Operator" "HCO status: $HCO_STATUS"
+            fi
+          else
+            log_result "FAIL" "OpenShift Virtualization Operator" "HCO CR not found"
+          fi
+          
+          # Check KubeVirt CR
+          KUBEVIRT_OUTPUT=$(oc get kubevirt -n openshift-cnv 2>&1)
+          if echo "$KUBEVIRT_OUTPUT" | grep -q "kubevirt"; then
+            log_result "PASS" "KubeVirt CR" "KubeVirt CR exists"
+          else
+            log_result "WARN" "KubeVirt CR" "KubeVirt CR not found (may still be deploying)"
+          fi
+          
+          # Check virt-handler pods
+          VIRT_HANDLER_OUTPUT=$(oc get pods -n openshift-cnv -l kubevirt.io=virt-handler --field-selector=status.phase=Running --no-headers 2>&1)
+          VIRT_HANDLER_READY=$(echo "$VIRT_HANDLER_OUTPUT" | grep -v "No resources found" | wc -l)
+          if [ "$VIRT_HANDLER_READY" -gt 0 ]; then
+            log_result "PASS" "virt-handler Pods" "$VIRT_HANDLER_READY pod(s) running"
+          else
+            log_result "FAIL" "virt-handler Pods" "No running virt-handler pods found"
+          fi
+          
+          echo ""
+          
+          # 2. Detect instance type and check emulation
+          echo -e "${CYAN}2. Checking KVM Emulation Configuration...${NC}"
+          INSTANCE_TYPE=$(oc get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "unknown")
+          IS_METAL=false
+          if [[ "$INSTANCE_TYPE" == *"metal"* ]]; then
+            IS_METAL=true
+          fi
+          
+          echo "   Instance Type: $INSTANCE_TYPE"
+          
+          if [ "$IS_METAL" = true ]; then
+            log_result "PASS" "KVM Emulation" "Bare-metal instance - native KVM (emulation not needed)"
+          else
+            # For virtualized instances, check if emulation is enabled
+            EMULATION_ENABLED=false
+            
+            # Check KubeVirt CR for emulation
+            if oc get kubevirt -n openshift-cnv kubevirt-kubevirt-hyperconverged -o jsonpath='{.spec.configuration.developerConfiguration.useEmulation}' 2>/dev/null | grep -q "true"; then
+              EMULATION_ENABLED=true
+            fi
+            
+            # Also check ConfigMap (legacy method)
+            if oc get configmap -n openshift-cnv kubevirt-config -o jsonpath='{.data.debug\.useEmulation}' 2>/dev/null | grep -q "true"; then
+              EMULATION_ENABLED=true
+            fi
+            
+            if [ "$EMULATION_ENABLED" = true ]; then
+              log_result "PASS" "KVM Emulation" "Emulation enabled for virtualized instance"
+            else
+              log_result "FAIL" "KVM Emulation" "Emulation not enabled - required for virtualized instances"
+            fi
+          fi
+          
+          echo ""
+          
+          # 3. Check Cert Manager
+          echo -e "${CYAN}3. Checking Cert Manager Operator...${NC}"
+          if oc get pods -n openshift-cert-manager-operator --field-selector=status.phase=Running --no-headers 2>&1 | grep -q cert-manager; then
+            log_result "PASS" "Cert Manager Operator" "Operator pods running"
+          else
+            log_result "WARN" "Cert Manager Operator" "Operator pods not running (may still be deploying)"
+          fi
+          
+          echo ""
+          
+          # 4. Test VM Creation
+          echo -e "${CYAN}4. Testing VM Creation...${NC}"
+          
+          # Apply test VM manifest
+          if oc apply -f /tmp/test-vm.yaml &>/dev/null; then
+            log_result "PASS" "Test VM Created" "VM manifest applied successfully"
+            
+            # Start the VM
+            if oc patch virtualmachine validation-test-vm -n default --type merge -p '{"spec":{"running":true}}' &>/dev/null; then
+              log_result "PASS" "Test VM Started" "VM start command issued"
+              
+              # Wait for VM to boot (max 2 minutes)
+              echo "   Waiting for VM to boot (max 2 minutes)..."
+              VM_READY=false
+              for i in {1..24}; do
+                sleep 5
+                VMI_STATUS=$(oc get vmi validation-test-vm -n default -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                if [ "$VMI_STATUS" = "Running" ]; then
+                  VM_READY=true
+                  break
+                fi
+                echo "   Attempt $i/24: VM status: $VMI_STATUS"
+              done
+              
+              if [ "$VM_READY" = true ]; then
+                log_result "PASS" "Test VM Booted" "VM is running successfully"
+              else
+                log_result "FAIL" "Test VM Booted" "VM did not reach Running state (status: $VMI_STATUS)"
+              fi
+            else
+              log_result "FAIL" "Test VM Started" "Failed to start VM"
+            fi
+          else
+            log_result "FAIL" "Test VM Created" "Failed to apply VM manifest"
+          fi
+          
+          echo ""
+          
+          # 5. Node Health Check
+          echo -e "${CYAN}5. Checking Node Health...${NC}"
+          NODE_READY=$(oc get nodes -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+          if [ "$NODE_READY" = "True" ]; then
+            log_result "PASS" "Node Ready" "SNO node is ready"
+          else
+            log_result "FAIL" "Node Ready" "Node not ready (status: $NODE_READY)"
+          fi
+          
+          NODE_NAME=$(oc get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          echo "   Node: $NODE_NAME"
+          
+          echo ""
+          
+          # Summary
+          echo -e "${BLUE}============================================================${NC}"
+          echo -e "${BLUE}Validation Summary${NC}"
+          echo -e "${BLUE}============================================================${NC}"
+          echo -e "${GREEN}Passed:${NC} $PASSED"
+          echo -e "${YELLOW}Warnings:${NC} $WARNINGS"
+          echo -e "${RED}Failed:${NC} $FAILED"
+          echo ""
+          
+          # Write results to ConfigMap
+          cat > /tmp/results.yaml <<EOF
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: sno-validation-results
+            namespace: default
+          data:
+            passed: "$PASSED"
+            warnings: "$WARNINGS"
+            failed: "$FAILED"
+            instance_type: "$INSTANCE_TYPE"
+            is_metal: "$IS_METAL"
+            timestamp: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            results: |
+          $(cat "$RESULTS_DIR/results.txt" | sed 's/^/              /')
+          EOF
+          
+          oc apply -f /tmp/results.yaml &>/dev/null || true
+          
+          # Cleanup test VM
+          echo -e "${CYAN}Cleaning up test VM...${NC}"
+          oc delete virtualmachine validation-test-vm -n default --ignore-not-found=true &>/dev/null || true
+          sleep 5
+          oc delete vmi validation-test-vm -n default --ignore-not-found=true &>/dev/null || true
+          
+          # Exit with error if any checks failed
+          if [ $FAILED -gt 0 ]; then
+            echo -e "${RED}Validation completed with $FAILED failure(s)${NC}"
+            exit 1
+          else
+            echo -e "${GREEN}All validation checks passed!${NC}"
+            exit 0
+          fi
+        volumeMounts:
+        - name: test-vm
+          mountPath: /tmp/test-vm.yaml
+          subPath: test-vm.yaml
+      volumes:
+      - name: test-vm
+        configMap:
+          name: validation-test-vm-manifest
+---
+# ServiceAccount for validation job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sno-validation
+  namespace: default
+---
+# ClusterRole for validation job (needed to access resources in multiple namespaces)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sno-validation
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["kubevirt.io"]
+  resources: ["virtualmachines", "virtualmachineinstances"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["hco.kubevirt.io"]
+  resources: ["hyperconvergeds"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding for validation job
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sno-validation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sno-validation
+subjects:
+- kind: ServiceAccount
+  name: sno-validation
+  namespace: default
+---
+# ConfigMap containing test VM manifest
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: validation-test-vm-manifest
+  namespace: default
+data:
+  test-vm.yaml: |
+    apiVersion: kubevirt.io/v1
+    kind: VirtualMachine
+    metadata:
+      name: validation-test-vm
+      namespace: default
+      labels:
+        app: sno-validation
+        purpose: testing
+    spec:
+      running: false
+      template:
+        metadata:
+          labels:
+            app: sno-validation
+            purpose: testing
+        spec:
+          domain:
+            devices:
+              disks:
+              - name: containerdisk
+                disk:
+                  bus: virtio
+              - name: cloudinitdisk
+                disk:
+                  bus: virtio
+            resources:
+              requests:
+                memory: 512Mi
+                cpu: 1
+          terminationGracePeriodSeconds: 0
+          volumes:
+          - name: containerdisk
+            containerDisk:
+              image: quay.io/kubevirt/cirros-container-disk-demo:latest
+          - name: cloudinitdisk
+            cloudInitNoCloud:
+              userData: |
+                #!/bin/sh
+                echo "Validation test VM booted successfully"
+                while true; do sleep 3600; done

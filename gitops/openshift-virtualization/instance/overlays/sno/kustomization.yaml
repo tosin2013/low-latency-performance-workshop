@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# Patch HyperConverged to enable software emulation for virtualized instances
+# This is required for non-bare-metal instances (e.g., m5.4xlarge) that lack hardware KVM
+patches:
+  - path: patch-hco-emulation.yaml
+    target:
+      kind: HyperConverged
+      name: kubevirt-hyperconverged

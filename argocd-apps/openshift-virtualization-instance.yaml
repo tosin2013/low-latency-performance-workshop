@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://github.com/tosin2013/low-latency-performance-workshop.git
     targetRevision: HEAD
-    path: gitops/openshift-virtualization/instance
+    path: gitops/openshift-virtualization/instance/overlays/sno
   destination:
     # Replace with your SNO cluster API URL
     server: https://api.workshop-<username>.<subdomain>:6443

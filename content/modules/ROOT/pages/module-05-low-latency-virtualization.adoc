@@ -56,6 +56,39 @@ OpenShift Virtualization enables running virtual machines alongside containers o
 | NUMA topology awareness
 |===
 
+[WARNING]
+====
+**Virtualized Instance Configuration (m5.4xlarge)**
+
+This workshop uses AWS m5.4xlarge instances, which are virtualized EC2 instances (not bare-metal). 
+OpenShift Virtualization is configured to run in **software emulation mode** (QEMU TCG) because 
+hardware virtualization (KVM) is not available on virtualized instances.
+
+**Performance Expectations:**
+
+* **VM Boot Time**: VMs will boot successfully but will be slower than on bare-metal (typically 2-5 minutes vs. 30-60 seconds)
+* **CPU Performance**: VMs will run 10-50x slower than native performance due to software emulation
+* **HugePages**: Will work but provide less benefit than on bare-metal with KVM
+* **CPU Pinning**: Will be configured but have limited effectiveness without hardware virtualization
+* **Live Migration**: Not supported in emulation mode
+
+**What Still Works:**
+
+* All VM management features (create, delete, console access)
+* Network configuration and multi-interface setups
+* Storage and DataVolumes
+* Performance optimizations (HugePages, CPU pinning) - configured but with reduced benefit
+* Educational demonstrations of low-latency concepts
+
+**Production Considerations:**
+
+For production workloads requiring optimal VM performance, use bare-metal instances (e.g., `.metal` instance types) 
+that support KVM hardware virtualization. This workshop configuration is designed for educational purposes 
+to demonstrate OpenShift Virtualization concepts on accessible cloud infrastructure.
+
+The HyperConverged CR is configured with `developerConfiguration.useEmulation: true` to enable this mode.
+====
+
 === Verifying OpenShift Virtualization Installation
 
 OpenShift Virtualization was deployed in Module 2. Let's verify it's ready for low-latency workloads.
@@ -72,6 +105,8 @@ oc get pods -n openshift-cnv --field-selector=status.phase=Running | head -10
 
   # Check if KVM virtualization is available on the cluster
 oc get nodes -o jsonpath='{.items[*].status.allocatable.devices\.kubevirt\.io/kvm}' | grep -q "1k" && echo "✅ KVM available on cluster nodes" || echo "❌ KVM not available"
+  # Note: On virtualized instances (m5.4xlarge), KVM will not be available.
+  # This is expected - OpenShift Virtualization will use software emulation mode.
 
   # Verify the operator CSV status
 oc get csv -n openshift-cnv | grep kubevirt-hyperconverged
