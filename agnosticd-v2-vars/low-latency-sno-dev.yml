@@ -185,6 +185,9 @@ ocp4_workload_cert_manager_install_api_certificates: false
 # ===================================================================
 ocp4_workload_openshift_virtualization_channel: stable
 ocp4_workload_openshift_virtualization_wait_for_deploy: true
+# Enable nested KVM support for virtualized instances
+# Note: This sets subscription env var; deploy script also patches HyperConverged CR
+ocp4_workload_openshift_virtualization_enabled_nested_kvm: true
 
 # ===================================================================
 # SR-IOV Network Operator Workload Configuration

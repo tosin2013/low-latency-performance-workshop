@@ -130,6 +130,51 @@ echo ""
 echo -e "${CYAN}Waiting for cluster to stabilize (30 seconds)...${NC}"
 sleep 30
 
+# Apply KVM emulation patch for virtualized instances
+if [[ "$INSTANCE_TYPE" == "virtualized" ]]; then
+  echo ""
+  echo -e "${BLUE}============================================================${NC}"
+  echo -e "${BLUE}Applying KVM Emulation Configuration${NC}"
+  echo -e "${BLUE}============================================================${NC}"
+  echo ""
+  
+  export KUBECONFIG="$KUBECONFIG_PATH"
+  
+  # Wait for API to be available
+  echo -e "${CYAN}Waiting for cluster API to be available...${NC}"
+  for i in {1..30}; do
+    if oc get nodes &>/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
+  
+  # Wait for HyperConverged CR to exist
+  echo -e "${CYAN}Waiting for HyperConverged CR to be ready...${NC}"
+  for i in {1..30}; do
+    if oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv &>/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
+  
+  # Apply the patch
+  echo -e "${YELLOW}→${NC} Applying KVM emulation patch..."
+  if oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv --type merge -p \
+    '{"metadata":{"annotations":{"kubevirt.kubevirt.io/jsonpatch":"[{\"op\":\"add\",\"path\":\"/spec/configuration/developerConfiguration/useEmulation\",\"value\":true}]"}}}' 2>/dev/null; then
+    echo -e "${GREEN}✓${NC} KVM emulation patch applied successfully"
+    echo "  Waiting for virt-handler to restart and detect emulation..."
+    sleep 30
+  else
+    echo -e "${RED}✗${NC} Failed to apply emulation patch"
+    echo "   Check if HyperConverged CR exists:"
+    echo "   oc get hyperconverged -n openshift-cnv"
+  fi
+else
+  echo ""
+  echo -e "${CYAN}ℹ${NC}  Bare-metal instance - emulation not needed"
+fi
+
 # Run validation
 echo ""
 echo -e "${BLUE}============================================================${NC}"
