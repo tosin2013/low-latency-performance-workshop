@@ -82,21 +82,21 @@ spec:
             local message=$3
             echo "$status|$check|$message" >> "$RESULTS_DIR/results.txt"
             if [ "$status" = "PASS" ]; then
-              ((PASSED++))
+              ((PASSED++)) || true
               echo -e "${GREEN}✓${NC} $check"
             elif [ "$status" = "FAIL" ]; then
-              ((FAILED++))
+              ((FAILED++)) || true
               echo -e "${RED}✗${NC} $check: $message"
             else
-              ((WARNINGS++))
+              ((WARNINGS++)) || true
               echo -e "${YELLOW}⚠${NC} $check: $message"
             fi
           }
           
           # 1. Check OpenShift Virtualization Operator
           echo -e "${CYAN}1. Checking OpenShift Virtualization Operator...${NC}"
-          HCO_OUTPUT=$(oc get hyperconverged -n openshift-cnv 2>&1)
-          HCO_NAME=$(echo "$HCO_OUTPUT" | grep -v "^NAME" | awk '{print $1}' | head -1)
+          HCO_OUTPUT=$(oc get hyperconverged -n openshift-cnv 2>&1 || true)
+          HCO_NAME=$(echo "$HCO_OUTPUT" | grep -v "^NAME" | awk '{print $1}' | head -1 || true)
           if [ -n "$HCO_NAME" ] && [ "$HCO_NAME" != "No resources found" ]; then
             HCO_STATUS=$(oc get hyperconverged -n openshift-cnv "$HCO_NAME" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>&1 || echo "Unknown")
             if [ "$HCO_STATUS" = "True" ]; then
@@ -109,7 +109,7 @@ spec:
           fi
           
           # Check KubeVirt CR
-          KUBEVIRT_OUTPUT=$(oc get kubevirt -n openshift-cnv 2>&1)
+          KUBEVIRT_OUTPUT=$(oc get kubevirt -n openshift-cnv 2>&1 || true)
           if echo "$KUBEVIRT_OUTPUT" | grep -q "kubevirt"; then
             log_result "PASS" "KubeVirt CR" "KubeVirt CR exists"
           else
@@ -117,8 +117,8 @@ spec:
           fi
           
           # Check virt-handler pods
-          VIRT_HANDLER_OUTPUT=$(oc get pods -n openshift-cnv -l kubevirt.io=virt-handler --field-selector=status.phase=Running --no-headers 2>&1)
-          VIRT_HANDLER_READY=$(echo "$VIRT_HANDLER_OUTPUT" | grep -v "No resources found" | wc -l)
+          VIRT_HANDLER_OUTPUT=$(oc get pods -n openshift-cnv -l kubevirt.io=virt-handler --field-selector=status.phase=Running --no-headers 2>&1 || true)
+          VIRT_HANDLER_READY=$(echo "$VIRT_HANDLER_OUTPUT" | grep -v "No resources found" | wc -l || echo "0")
           if [ "$VIRT_HANDLER_READY" -gt 0 ]; then
             log_result "PASS" "virt-handler Pods" "$VIRT_HANDLER_READY pod(s) running"
           else

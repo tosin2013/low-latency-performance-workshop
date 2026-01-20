@@ -82,26 +82,34 @@ if [[ ! -f "${WORKSHOP_DIR}/agnosticd-v2-vars/${CONFIG_NAME}.yml" ]]; then
   exit 1
 fi
 
-# Set instance type based on parameter
+# Set instance type based on parameter and update config file
+CONFIG_FILE="${WORKSHOP_DIR}/agnosticd-v2-vars/${CONFIG_NAME}.yml"
 if [ "$INSTANCE_TYPE" = "baremetal" ]; then
   INSTANCE_TYPE_VALUE="m5zn.metal"
-  echo -e "${CYAN}Note:${NC} Using bare-metal instance (m5zn.metal)"
-  echo -e "${CYAN}      Make sure to uncomment m5zn.metal in ${CONFIG_NAME}.yml${NC}"
-  echo -e "${CYAN}      and comment out m5.4xlarge before deployment${NC}"
-  echo ""
-  read -p "Press Enter to continue or Ctrl+C to cancel..."
+  echo -e "${CYAN}Configuring for bare-metal instance (m5zn.metal)...${NC}"
+  
+  # Comment out m5.4xlarge and uncomment m5zn.metal
+  sed -i 's/^control_plane_instance_type: m5\.4xlarge$/# control_plane_instance_type: m5.4xlarge/' "$CONFIG_FILE"
+  sed -i 's/^# control_plane_instance_type: m5zn\.metal$/control_plane_instance_type: m5zn.metal/' "$CONFIG_FILE"
+  
+  echo -e "${GREEN}✓${NC} Config file updated: m5.4xlarge commented, m5zn.metal uncommented"
 else
   INSTANCE_TYPE_VALUE="m5.4xlarge"
+  echo -e "${CYAN}Configuring for virtualized instance (m5.4xlarge)...${NC}"
+  
+  # Uncomment m5.4xlarge and comment out m5zn.metal
+  sed -i 's/^# control_plane_instance_type: m5\.4xlarge$/control_plane_instance_type: m5.4xlarge/' "$CONFIG_FILE"
+  sed -i 's/^control_plane_instance_type: m5zn\.metal$/# control_plane_instance_type: m5zn.metal/' "$CONFIG_FILE"
+  
+  echo -e "${GREEN}✓${NC} Config file updated: m5.4xlarge uncommented, m5zn.metal commented"
 fi
+echo ""
 
 # Deploy
 cd "$AGNOSTICD_DIR"
 echo -e "${YELLOW}→${NC} Starting deployment..."
 echo ""
 
-# Use extra-vars to override instance type if needed
-# Note: AgnosticD will use the value from the config file, but we can override
-# For now, we rely on the config file being correctly set
 ./bin/agd provision \
   --guid "$GUID" \
   --config "$CONFIG_NAME" \
