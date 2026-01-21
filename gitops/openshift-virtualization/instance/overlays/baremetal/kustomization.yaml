@@ -3,3 +3,11 @@ kind: Kustomization
 
 resources:
   - ../../base
+
+# Patch HyperConverged to disable software emulation for bare-metal instances
+# This ensures native KVM is used (optimal performance) for bare-metal instances
+patches:
+  - path: patch-hco-disable-emulation.yaml
+    target:
+      kind: HyperConverged
+      name: kubevirt-hyperconverged

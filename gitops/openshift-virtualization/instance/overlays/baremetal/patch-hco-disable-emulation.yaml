@@ -1,0 +1,12 @@
+# Patch to disable software emulation for bare-metal instances
+# This uses the HCO JSON patch annotation to configure the KubeVirt CR
+# Required because HyperConverged CRD doesn't expose developerConfiguration
+apiVersion: hco.kubevirt.io/v1beta1
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+  namespace: openshift-cnv
+  annotations:
+    # This annotation tells HCO to apply the JSON patch to the managed KubeVirt CR
+    # Disables software emulation for bare-metal instances (e.g., m5zn.metal) to use native KVM
+    kubevirt.kubevirt.io/jsonpatch: '[{"op":"add","path":"/spec/configuration/developerConfiguration/useEmulation","value":false}]'
