@@ -1,6 +1,32 @@
 # LVM Storage Operator (LVMS) for Bare-Metal Deployments
 
+> ⚠️ **EXPERIMENTAL**: This LVMS integration for boot source images is still being tested on bare-metal deployments. The current recommendation is to use `gp3-csi` (EBS) for boot source golden images, and LVMS for VM runtime workloads where low-latency storage is needed. **Contributions and testing feedback are welcome!**
+
 This directory contains GitOps configuration for deploying the LVM Storage operator on bare-metal SNO clusters to provide fast local storage for OpenShift Virtualization VMs.
+
+## Current Status
+
+| Use Case | Recommended Storage | Status |
+|----------|---------------------|--------|
+| Boot source images (golden images) | `gp3-csi` | ✅ Stable - uses EBS snapshots |
+| VM runtime disks | `lvms-vg-local` | 🧪 Testing - lower latency |
+| Low-latency workloads | `lvms-vg-local` | 🧪 Testing - best I/O performance |
+
+### Known Issues
+
+1. **Volume Populator compatibility**: CDI Volume Populators have issues with LVMS `WaitForFirstConsumer` binding mode for golden images
+2. **Slow qemu-img conversion**: Boot source imports use qemu-img QCOW2→RAW conversion which is CPU-intensive (~45 min for 6 images)
+3. **Concurrent import limits**: 6 parallel imports compete for CPU (750m limit per pod) and thin pool I/O
+
+### Contributing
+
+We welcome contributions to improve LVMS integration! Areas that need work:
+- [ ] Volume Populator compatibility testing
+- [ ] Optimizing CDI resource limits for LVMS
+- [ ] Testing with different instance types
+- [ ] Documentation improvements
+
+Please open issues or PRs at: https://github.com/tosin2013/low-latency-performance-workshop
 
 ## Overview
 
