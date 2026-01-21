@@ -109,3 +109,4 @@ gitops/workshop-docs/overlays/use[0-9]*/
 
 # MCP server context
 .mcp-server-context.md
+results.txt

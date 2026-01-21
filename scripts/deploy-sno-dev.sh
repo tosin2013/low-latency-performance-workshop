@@ -237,6 +237,73 @@ else
   
   echo ""
   echo -e "${CYAN}ℹ${NC}  Bare-metal instance - native KVM will be used (no emulation needed)"
+  
+  # Deploy LVM Storage operator for better VM storage performance
+  echo ""
+  echo -e "${BLUE}============================================================${NC}"
+  echo -e "${BLUE}Deploying LVM Storage Operator${NC}"
+  echo -e "${BLUE}============================================================${NC}"
+  echo ""
+  echo -e "${CYAN}Installing LVMS operator for local storage...${NC}"
+  
+  # Wait for API to be available
+  for i in {1..30}; do
+    if oc get nodes &>/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
+  
+  # Install LVMS operator
+  if oc apply -k "${WORKSHOP_DIR}/gitops/lvms-operator/operator/overlays/baremetal" 2>/dev/null; then
+    echo -e "${GREEN}✓${NC} LVMS operator resources applied"
+    echo "  Waiting for operator to be ready..."
+    
+    # Wait for operator deployment
+    for i in {1..60}; do
+      if oc get deployment lvms-operator -n openshift-storage &>/dev/null 2>&1; then
+        if oc wait --for=condition=Available deployment/lvms-operator -n openshift-storage --timeout=60s 2>/dev/null; then
+          echo -e "${GREEN}✓${NC} LVMS operator is ready"
+          break
+        fi
+      fi
+      sleep 5
+    done
+    
+    # Create LVMCluster
+    echo ""
+    echo -e "${CYAN}Creating LVMCluster...${NC}"
+    if oc apply -k "${WORKSHOP_DIR}/gitops/lvms-operator/instance/overlays/baremetal" 2>/dev/null; then
+      echo -e "${GREEN}✓${NC} LVMCluster created"
+      echo "  Waiting for LVMCluster to be ready (this may take 2-3 minutes)..."
+      
+      # Wait for LVMCluster to be ready
+      for i in {1..60}; do
+        if oc wait --for=condition=Ready lvmcluster/lvms-cluster -n openshift-storage --timeout=60s 2>/dev/null; then
+          echo -e "${GREEN}✓${NC} LVMCluster is ready"
+          
+          # Set LVMS storage class as default for virtualization
+          echo ""
+          echo -e "${CYAN}Configuring storage class for virtualization...${NC}"
+          if oc annotate storageclass lvms-vg-local storageclass.kubevirt.io/is-default-virt-class=true --overwrite 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} LVMS storage class configured for virtualization workloads"
+          else
+            echo -e "${YELLOW}⚠${NC}  Could not annotate storage class (may not exist yet)"
+            echo "   Run manually: oc annotate storageclass lvms-vg-local storageclass.kubevirt.io/is-default-virt-class=true"
+          fi
+          break
+        fi
+        sleep 5
+      done
+    else
+      echo -e "${YELLOW}⚠${NC}  Could not create LVMCluster"
+      echo "   Ensure the extra EBS volume is attached to the instance"
+      echo "   Manual deployment: oc apply -k ${WORKSHOP_DIR}/gitops/lvms-operator/instance/overlays/baremetal"
+    fi
+  else
+    echo -e "${YELLOW}⚠${NC}  Could not apply LVMS operator resources"
+    echo "   Manual deployment: oc apply -k ${WORKSHOP_DIR}/gitops/lvms-operator/operator/overlays/baremetal"
+  fi
 fi
 
 # Run validation

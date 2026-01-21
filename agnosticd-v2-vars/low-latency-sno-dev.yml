@@ -73,7 +73,7 @@ worker_instance_count: 0
 # - OpenShift Virt: Requires emulation enabled (use 'sno' GitOps overlay)
 # - Best for: Testing workshop functionality on cost-effective instances
 # - Validation: Will verify emulation is enabled
-control_plane_instance_type: m5.4xlarge
+# control_plane_instance_type: m5.4xlarge
 
 # OPTION 2: Bare-Metal Instance (m5zn.metal) - UNCOMMENT TO USE
 # ===================================================================
@@ -84,7 +84,7 @@ control_plane_instance_type: m5.4xlarge
 # - OpenShift Virt: Uses native KVM (use 'standard' GitOps overlay)
 # - Best for: Testing RT kernel support and native KVM performance
 # - Validation: Will skip emulation check (not needed)
-# control_plane_instance_type: m5zn.metal
+control_plane_instance_type: m5zn.metal
 
 # ALTERNATIVE Bare-Metal Options (uncomment if needed):
 # ===================================================================
@@ -110,6 +110,28 @@ control_plane_instance_type: m5.4xlarge
 
 control_plane_storage_size: 200
 control_plane_storage_type: gp3
+
+# ===================================================================
+# Additional Storage for LVM Storage Operator (Bare-Metal Only)
+# ===================================================================
+# Extra EBS volume for LVMS operator to provide fast local storage
+# for OpenShift Virtualization VMs. This eliminates EBS snapshot
+# wait times (2-5 minutes) and provides better I/O performance.
+#
+# NOTE: AgnosticD variable name needs verification. Common patterns:
+#   - control_plane_extra_volumes
+#   - control_plane_additional_volumes
+#   - aws_control_plane_extra_volumes
+#
+# If the variable name is different, update this configuration accordingly.
+# ===================================================================
+# Uncomment and configure when deploying bare-metal instances:
+# control_plane_extra_volumes:
+#   - device_name: /dev/xvdf
+#     volume_size: 500
+#     volume_type: gp3
+#     delete_on_termination: true
+#     encrypted: false
 
 # Installation method
 host_ocp4_deploy_installation_method: openshift_install
