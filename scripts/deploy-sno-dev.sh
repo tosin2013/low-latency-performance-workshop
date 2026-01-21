@@ -138,24 +138,44 @@ echo ""
 echo -e "${CYAN}Waiting for cluster to stabilize (30 seconds)...${NC}"
 sleep 30
 
-# Apply KVM emulation patch for virtualized instances
+# Configure OpenShift Virtualization based on instance type
+export KUBECONFIG="$KUBECONFIG_PATH"
+
+# Wait for API to be available
+echo -e "${CYAN}Waiting for cluster API to be available...${NC}"
+for i in {1..30}; do
+  if oc get nodes &>/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
 if [[ "$INSTANCE_TYPE" == "virtualized" ]]; then
   echo ""
   echo -e "${BLUE}============================================================${NC}"
-  echo -e "${BLUE}Applying KVM Emulation Configuration${NC}"
+  echo -e "${BLUE}Configuring OpenShift Virtualization for Virtualized Instance${NC}"
   echo -e "${BLUE}============================================================${NC}"
   echo ""
   
-  export KUBECONFIG="$KUBECONFIG_PATH"
-  
-  # Wait for API to be available
-  echo -e "${CYAN}Waiting for cluster API to be available...${NC}"
-  for i in {1..30}; do
-    if oc get nodes &>/dev/null 2>&1; then
-      break
+  # Check if ArgoCD application exists and update overlay if needed
+  echo -e "${CYAN}Checking ArgoCD application configuration...${NC}"
+  if oc get application openshift-virtualization-instance -n openshift-gitops &>/dev/null 2>&1; then
+    CURRENT_PATH=$(oc get application openshift-virtualization-instance -n openshift-gitops -o jsonpath='{.spec.source.path}' 2>/dev/null || echo "")
+    if [[ "$CURRENT_PATH" != "gitops/openshift-virtualization/instance/overlays/virtualized" ]]; then
+      echo -e "${YELLOW}→${NC} Updating ArgoCD application to use 'virtualized' overlay..."
+      oc patch application openshift-virtualization-instance -n openshift-gitops --type json -p '[
+        {
+          "op": "replace",
+          "path": "/spec/source/path",
+          "value": "gitops/openshift-virtualization/instance/overlays/virtualized"
+        }
+      ]' 2>/dev/null && echo -e "${GREEN}✓${NC} ArgoCD application updated" || echo -e "${YELLOW}⚠${NC}  Could not update ArgoCD application (may need manual update)"
+    else
+      echo -e "${GREEN}✓${NC} ArgoCD application already configured for virtualized instance"
     fi
-    sleep 2
-  done
+  else
+    echo -e "${YELLOW}⚠${NC}  ArgoCD application not found (may not be deployed yet)"
+  fi
   
   # Wait for HyperConverged CR to exist
   echo -e "${CYAN}Waiting for HyperConverged CR to be ready...${NC}"
@@ -166,7 +186,7 @@ if [[ "$INSTANCE_TYPE" == "virtualized" ]]; then
     sleep 2
   done
   
-  # Apply the patch
+  # Apply the emulation patch
   echo -e "${YELLOW}→${NC} Applying KVM emulation patch..."
   if oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv --type merge -p \
     '{"metadata":{"annotations":{"kubevirt.kubevirt.io/jsonpatch":"[{\"op\":\"add\",\"path\":\"/spec/configuration/developerConfiguration/useEmulation\",\"value\":true}]"}}}' 2>/dev/null; then
@@ -180,7 +200,43 @@ if [[ "$INSTANCE_TYPE" == "virtualized" ]]; then
   fi
 else
   echo ""
-  echo -e "${CYAN}ℹ${NC}  Bare-metal instance - emulation not needed"
+  echo -e "${BLUE}============================================================${NC}"
+  echo -e "${BLUE}Configuring OpenShift Virtualization for Bare-Metal Instance${NC}"
+  echo -e "${BLUE}============================================================${NC}"
+  echo ""
+  
+  # Check if ArgoCD application exists and update overlay if needed
+  echo -e "${CYAN}Checking ArgoCD application configuration...${NC}"
+  if oc get application openshift-virtualization-instance -n openshift-gitops &>/dev/null 2>&1; then
+    CURRENT_PATH=$(oc get application openshift-virtualization-instance -n openshift-gitops -o jsonpath='{.spec.source.path}' 2>/dev/null || echo "")
+    if [[ "$CURRENT_PATH" != "gitops/openshift-virtualization/instance/overlays/baremetal" ]]; then
+      echo -e "${YELLOW}→${NC} Updating ArgoCD application to use 'baremetal' overlay (native KVM)..."
+      if oc patch application openshift-virtualization-instance -n openshift-gitops --type json -p '[
+        {
+          "op": "replace",
+          "path": "/spec/source/path",
+          "value": "gitops/openshift-virtualization/instance/overlays/baremetal"
+        }
+      ]' 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} ArgoCD application updated to use 'baremetal' overlay"
+        echo "  This ensures native KVM is used (no emulation) for bare-metal instances"
+        echo "  Waiting for ArgoCD to sync..."
+        sleep 10
+      else
+        echo -e "${RED}✗${NC} Failed to update ArgoCD application"
+        echo "   Manual fix required:"
+        echo "   oc patch application openshift-virtualization-instance -n openshift-gitops --type json -p '[{\"op\":\"replace\",\"path\":\"/spec/source/path\",\"value\":\"gitops/openshift-virtualization/instance/overlays/baremetal\"}]'"
+      fi
+    else
+      echo -e "${GREEN}✓${NC} ArgoCD application already configured for bare-metal instance"
+    fi
+  else
+    echo -e "${YELLOW}⚠${NC}  ArgoCD application not found (may not be deployed yet)"
+    echo "   When deploying GitOps, ensure openshift-virtualization-instance uses 'baremetal' overlay"
+  fi
+  
+  echo ""
+  echo -e "${CYAN}ℹ${NC}  Bare-metal instance - native KVM will be used (no emulation needed)"
 fi
 
 # Run validation

@@ -180,5 +180,5 @@ For virtualized instances (m5.4xlarge), emulation must be enabled. Check:
 If emulation is not enabled, apply the SNO overlay:
 ```bash
 # Ensure GitOps is configured to use sno overlay for virtualized instances
-# See: gitops/openshift-virtualization/instance/overlays/sno/
+# See: gitops/openshift-virtualization/instance/overlays/virtualized/
 ```
