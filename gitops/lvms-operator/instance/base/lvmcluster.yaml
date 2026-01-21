@@ -12,9 +12,9 @@ spec:
         # Path to the additional EBS volume attached during deployment
         # Note: Device path may vary - verify on actual instance
         # Common paths: /dev/nvme1n1 (NVMe), /dev/xvdf (Xen), /dev/sdf (SCSI)
+        # For NVMe instances (m5zn.metal, c5.metal, etc.): /dev/nvme1n1
         paths:
-        - /dev/nvme1n1  # Most likely for AWS metal instances with NVMe
-        - /dev/xvdf     # Fallback for Xen-based instances
+        - /dev/nvme1n1
       thinPoolConfig:
         name: thin-pool
         sizePercent: 90
