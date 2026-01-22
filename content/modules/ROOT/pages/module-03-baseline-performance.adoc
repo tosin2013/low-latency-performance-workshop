@@ -492,19 +492,19 @@ Document these baseline metrics carefully - they represent your cluster's curren
 
 In this module, you have successfully:
 
-✅ *Verified cluster readiness* for performance testing
-✅ *Installed kube-burner* performance testing tool
-✅ *Created baseline test configurations* for pod creation latency
-✅ *Executed baseline performance tests* to measure current cluster performance
-✅ *Analyzed test results* and documented baseline metrics
-✅ *Established a reference point* for measuring future optimizations
+✅ *Verified cluster readiness* for performance testing +
+✅ *Installed kube-burner* performance testing tool +
+✅ *Created baseline test configurations* for pod creation latency +
+✅ *Executed baseline performance tests* to measure current cluster performance +
+✅ *Analyzed test results* and documented baseline metrics +
+✅ *Established a reference point* for measuring future optimizations +
 
 .*What's Next?*
-In Module 4, we'll begin implementing core performance tuning optimizations on this same target cluster, including:
-- Performance Profiles for CPU isolation (using built-in Node Tuning Operator)
-- HugePages configuration
-- Real-time kernel enablement  
-- Node tuning optimizations
+In Module 4, we'll begin implementing core performance tuning optimizations on this same target cluster, including: +
+- Performance Profiles for CPU isolation (using built-in Node Tuning Operator) +
+- HugePages configuration +
+- Real-time kernel enablement +
+- Node tuning optimizations +
 
 These optimizations should significantly improve the latency metrics you've just measured in your baseline tests.
 
