@@ -652,6 +652,10 @@ EOF
   # This approach is ideal for performance testing as it doesn't require PVC provisioning
 echo "Creating Fedora VMI template for kube-burner testing"
 
+  # Note: This template uses 'host-model' CPU mode for compatibility with virtualized instances
+  # For bare-metal with KVM, you could use 'host-passthrough' for better performance
+  # The module05-configure-vmi.sh script automatically detects the environment
+
 cat << EOF > fedora-vmi.yml
 apiVersion: kubevirt.io/v1
 kind: VirtualMachineInstance
@@ -766,10 +770,13 @@ bash ~/low-latency-performance-workshop/scripts/module05-configure-vmi.sh
 
 * Auto-detects Performance Profile availability
 * Auto-detects HugePages configuration
+* **Auto-detects virtualized vs bare-metal environment** (checks emulation mode)
 * Generates optimized VMI YAML with:
   - CPU pinning (if Performance Profile exists)
   - HugePages (if available)
-  - Appropriate CPU model (host-passthrough or host-model)
+  - **Appropriate CPU model**:
+    * `host-passthrough` - For bare-metal with KVM (best performance)
+    * `host-model` - For virtualized instances (m5.4xlarge) or when KVM unavailable
   - Educational comments
 
 **Benefits of Using the Script:**
@@ -2566,11 +2573,25 @@ oc logs -n <namespace> -l kubevirt.io/created-by=<vm-name>
 ----
   # If you see "unsupported configuration: CPU mode 'host-passthrough'" error:
 
-  # Check available CPU models
-oc get nodes -o jsonpath='{.items[0].status.nodeInfo.machineID}'
+  # This error occurs on virtualized instances (m5.4xlarge) because:
+  # - host-passthrough requires KVM (hardware virtualization)
+  # - Virtualized instances use software emulation (QEMU TCG) - no KVM available
 
-  # The workshop uses 'host-model' for better compatibility
-  # If issues persist, you can use a specific CPU model:
+  # Solution 1: Use the module05-configure-vmi.sh script (recommended)
+  # It automatically detects virtualized instances and uses host-model
+bash ~/low-latency-performance-workshop/scripts/module05-configure-vmi.sh
+
+  # Solution 2: Manually check emulation mode and use host-model
+EMULATION=$(oc get kubevirt -n openshift-cnv kubevirt-kubevirt-hyperconverged -o jsonpath='{.spec.configuration.developerConfiguration.useEmulation}' 2>/dev/null)
+if [ "$EMULATION" = "true" ]; then
+    echo "Virtualized instance detected - use host-model CPU mode"
+    # In your VMI spec, use: model: host-model
+else
+    echo "Bare-metal instance - host-passthrough may work"
+    # In your VMI spec, you can try: model: host-passthrough
+fi
+
+  # Solution 3: Use a specific CPU model for compatibility
   # model: "Haswell-noTSX" or model: "Skylake-Client"
 
   # Check hypervisor capabilities

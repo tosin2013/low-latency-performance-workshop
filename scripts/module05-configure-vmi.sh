@@ -163,9 +163,23 @@ fi
 echo ""
 
 # Determine CPU mode
-if [ "$HAS_PERF_PROFILE" = true ]; then
+# Check if we're on a virtualized instance (emulation mode)
+# host-passthrough requires KVM which isn't available on virtualized instances
+EMULATION_MODE=$(oc get kubevirt -n openshift-cnv kubevirt-kubevirt-hyperconverged -o jsonpath='{.spec.configuration.developerConfiguration.useEmulation}' 2>/dev/null || echo "false")
+
+if [ "$HAS_PERF_PROFILE" = true ] && [ "$EMULATION_MODE" != "true" ]; then
+    # Use host-passthrough only if we have Performance Profile AND hardware virtualization (KVM)
     CPU_MODE="host-passthrough"
-    info "Using CPU mode: host-passthrough (best performance with CPU pinning)"
+    info "Using CPU mode: host-passthrough (best performance with CPU pinning and KVM)"
+elif [ "$EMULATION_MODE" = "true" ]; then
+    # Virtualized instances (m5.4xlarge) - must use host-model
+    CPU_MODE="host-model"
+    warning "Virtualized instance detected (emulation mode)"
+    info "Using CPU mode: host-model (required for software emulation/QEMU TCG)"
+    if [ "$HAS_PERF_PROFILE" = true ]; then
+        warning "Performance Profile exists but host-passthrough not available on virtualized instances"
+        info "host-model will be used instead (compatible with software emulation)"
+    fi
 else
     CPU_MODE="host-model"
     info "Using CPU mode: host-model (better compatibility)"
