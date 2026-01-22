@@ -222,10 +222,89 @@ for student in "${STUDENT_ARRAY[@]}"; do
 done
 
 # ===================================================================
-# STEP 3: Deploy Hub Cluster
+# STEP 3: Configure OpenShift Virtualization for Virtualized Instances
 # ===================================================================
 echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}STEP 3: Deploying Hub Cluster${NC}"
+echo -e "${YELLOW}STEP 3: Configuring OpenShift Virtualization${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo ""
+echo -e "${BLUE}Applying KVM emulation patch for virtualized instances (non-bare-metal)${NC}"
+echo -e "${BLUE}This enables OpenShift Virtualization on EC2 instances like m5.4xlarge${NC}"
+echo ""
+
+for student in "${STUDENT_ARRAY[@]}"; do
+    student=$(echo "$student" | xargs) # Trim whitespace
+    kubeconfig_file="$OUTPUT_DIR/$student/openshift-cluster_${student}_kubeconfig"
+    
+    if [ ! -f "$kubeconfig_file" ]; then
+        echo -e "${YELLOW}⚠️  Kubeconfig not found for $student - skipping OCP Virt config${NC}"
+        continue
+    fi
+    
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${BLUE}[DRY-RUN] Would configure OpenShift Virtualization for $student${NC}"
+        continue
+    fi
+    
+    export KUBECONFIG="$kubeconfig_file"
+    
+    # Check if cluster is accessible
+    if ! oc get nodes &>/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  Cannot connect to $student cluster - skipping OCP Virt config${NC}"
+        continue
+    fi
+    
+    # Check if this is a virtualized instance (not bare-metal)
+    INSTANCE_TYPE=$(oc get nodes -o jsonpath='{.items[0].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "unknown")
+    
+    if [[ "$INSTANCE_TYPE" == *"metal"* ]]; then
+        echo -e "${CYAN}ℹ️  $student: Bare-metal instance ($INSTANCE_TYPE) - emulation not needed${NC}"
+        continue
+    fi
+    
+    echo -e "${BLUE}Configuring $student (instance type: $INSTANCE_TYPE)...${NC}"
+    
+    # Wait for HyperConverged CR to exist (max 60 seconds)
+    echo -e "  ${CYAN}Waiting for HyperConverged CR...${NC}"
+    HCO_READY=false
+    for i in {1..30}; do
+        if oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv &>/dev/null 2>&1; then
+            HCO_READY=true
+            break
+        fi
+        sleep 2
+    done
+    
+    if [ "$HCO_READY" != true ]; then
+        echo -e "${YELLOW}⚠️  HyperConverged CR not found for $student - OCP Virt may still be installing${NC}"
+        echo -e "   ${YELLOW}You can apply the patch manually later:${NC}"
+        echo -e "   ${YELLOW}export KUBECONFIG=$kubeconfig_file${NC}"
+        echo -e "   ${YELLOW}oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv --type merge -p '...patch...'${NC}"
+        continue
+    fi
+    
+    # Apply the KVM emulation patch
+    if oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv --type merge -p \
+        '{"metadata":{"annotations":{"kubevirt.kubevirt.io/jsonpatch":"[{\"op\":\"add\",\"path\":\"/spec/configuration/developerConfiguration/useEmulation\",\"value\":true}]"}}}' 2>/dev/null; then
+        echo -e "${GREEN}✓ KVM emulation patch applied for $student${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Could not apply emulation patch for $student${NC}"
+    fi
+    echo ""
+done
+
+# Allow virt-handler pods to restart with new configuration
+if [ "$DRY_RUN" != true ]; then
+    echo -e "${CYAN}Waiting 15 seconds for virt-handler pods to detect emulation config...${NC}"
+    sleep 15
+fi
+echo ""
+
+# ===================================================================
+# STEP 4: Deploy Hub Cluster
+# ===================================================================
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}STEP 4: Deploying Hub Cluster${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 echo -e "${BLUE}Note: Student credentials are collected but not passed to Hub deployment.${NC}"
@@ -254,10 +333,10 @@ fi
 echo ""
 
 # ===================================================================
-# STEP 4: Deploy Per-Student Showroom Instances
+# STEP 5: Deploy Per-Student Showroom Instances
 # ===================================================================
 echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}STEP 4: Deploying Per-Student Showrooms${NC}"
+echo -e "${YELLOW}STEP 5: Deploying Per-Student Showrooms${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 
@@ -282,10 +361,10 @@ fi
 echo ""
 
 # ===================================================================
-# STEP 5: Output Access Information
+# STEP 6: Output Access Information
 # ===================================================================
 echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}STEP 5: Access Information${NC}"
+echo -e "${YELLOW}STEP 6: Access Information${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 
