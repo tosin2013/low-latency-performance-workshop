@@ -12,11 +12,21 @@
 
 ### Service Quotas Needed
 
-For each SNO cluster, you need:
-- **Running On-Demand Standard instances**: 16+ vCPUs (1 × m5.4xlarge)
-- **VPCs**: 1+
-- **Elastic IPs**: 2+
+For each SNO cluster and associated bastion, you need:
+- **Running On-Demand Standard instances**: 18+ vCPUs
+  - SNO cluster: 1 × m5.4xlarge
+  - Bastion: 1 × t3a.medium
+- **VPCs**: 2+
+- **Elastic IPs**: 5+
 - **EBS volumes**: 2+ (gp3, 200GB each)
+
+For the Hub cluster and associated bastion, you need:
+- **Running On-Demand Standard instances**: 16+ vCPUs
+  - Hub: 3 × m5.xlarge, 1 × m5.large
+  - Bastion: 1 × t3a.medium
+- **VPCs**: 2+
+- **Elastic IPs**: 5+
+- **EBS volumes**: 5+ (gp3, 100GB or 120 GB each)
 
 ### Check Current Quotas
 
@@ -28,10 +38,16 @@ export PATH=$PATH:~/.local/bin
 # Configure AWS credentials (temporarily for quota check)
 aws configure
 
-# Check EC2 instance quota
+# Check EC2 instance vCPU quota
 aws service-quotas get-service-quota \
   --service-code ec2 \
   --quota-code L-1216C47A \
+  --region us-east-2
+
+# Check EC2  instance Elastic IP quota
+aws service-quotas get-service-quota \
+  --service-code ec2 \
+  --quota-code L-0263D0A3 \
   --region us-east-2
 ```
 
@@ -44,6 +60,13 @@ aws service-quotas request-service-quota-increase \
   --quota-code L-1216C47A \
   --desired-value 64 \
   --region us-east-2
+
+# Request increase to 12 Elastic IPs for 1 Hub and 1 SNO cluster, increase for additional SNO clusters
+aws service-quotas request-service-quota-increase \                                                                      
+  --service-code ec2 \
+  --quota-code L-0263D0A3 \
+  --desired-value 12 \
+  --region us-east-2
 ```
 
 **Note**: Quota increase requests can take 24-48 hours.
@@ -55,6 +78,12 @@ aws service-quotas request-service-quota-increase \
 - Bastion: t3a.medium (2 vCPU, 4GB RAM)
 - Storage: 200GB gp3 EBS
 - Cost: ~$20/day per cluster
+
+**Hub cluster**:
+- Instances:  3 × m5.xlarge, 1 × m5.large (14 vCPU, 56GB RAM)
+- Bastion: t3a.medium (2 vCPU, 4GB RAM)
+- Storage: 3 × 120GB gp3 EBS, 2 × 100GB gp3 EBS
+- Cost: ~$19/day per cluster
 
 ## Tools Required
 
