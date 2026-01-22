@@ -27,7 +27,7 @@ NAMESPACE="low-latency-workshop"
 CONTENT_REPO="https://github.com/tosin2013/low-latency-performance-workshop.git"
 CONTENT_REF="main"
 OUTPUT_DIR="${HOME}/Development/agnosticd-v2-output"
-HUB_KUBECONFIG="${OUTPUT_DIR}/hub-cluster/openshift-cluster_hub_kubeconfig"
+HUB_KUBECONFIG="${OUTPUT_DIR}/hub-cluster/openshift-cluster_hub-cluster_kubeconfig"
 
 # Parse arguments
 STUDENTS="student1,student2"
