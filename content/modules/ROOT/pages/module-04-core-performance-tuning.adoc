@@ -466,9 +466,6 @@ This script:
 ----
 # Validate Performance Profile configuration
 python3 ~/low-latency-performance-workshop/scripts/module04-tuning-validator.py
-
-# Skip educational explanations for automation
-python3 ~/low-latency-performance-workshop/scripts/module04-tuning-validator.py --skip-explanation
 ----
 +
 This script validates:
