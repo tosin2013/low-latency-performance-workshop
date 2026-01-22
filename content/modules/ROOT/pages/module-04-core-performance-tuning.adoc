@@ -111,22 +111,22 @@ Now we'll create a Performance Profile that configures CPU isolation, HugePages,
 
 The Linux Real-Time kernel extension (`kernel-rt`) provides deterministic scheduling and preemption capabilities essential for ultra-low latency workloads. However, it has specific infrastructure requirements:
 
-**AWS Instance Requirements:**
-* RT kernel requires **bare-metal EC2 instances** (instance types ending in `.metal`, e.g., `m5zn.metal`, `c5.metal`)
-* RT kernel **cannot run on virtualized instances** (e.g., `m5.4xlarge`, `c5.xlarge`)
-* This is because RT kernel needs direct hardware access for precise timing control
+**AWS Instance Requirements:** +
+* RT kernel requires **bare-metal EC2 instances** (instance types ending in `.metal`, e.g., `m5zn.metal`, `c5.metal`) +
+* RT kernel **cannot run on virtualized instances** (e.g., `m5.4xlarge`, `c5.xlarge`) +
+* This is because RT kernel needs direct hardware access for precise timing control +
 
-**Cost Comparison (us-east-2 region):**
-* Virtualized instance (`m5.4xlarge`): ~$0.77/hour
-* Bare-metal instance (`m5zn.metal`): ~$3.96/hour (5x more expensive)
+**Cost Comparison (us-east-2 region):** +
+* Virtualized instance (`m5.4xlarge`): ~$0.77/hour +
+* Bare-metal instance (`m5zn.metal`): ~$3.96/hour (5x more expensive) +
 
 **Workshop Recommendation:**
 
-By default, the Performance Profile script creates a profile **WITHOUT RT kernel enabled**. This configuration still provides:
-* ✅ CPU isolation (isolcpus)
-* ✅ HugePages allocation
-* ✅ NUMA topology optimization
-* ✅ Kernel tuning parameters
+By default, the Performance Profile script creates a profile **WITHOUT RT kernel enabled**. This configuration still provides: +
+* ✅ CPU isolation (isolcpus) +
+* ✅ HugePages allocation +
+* ✅ NUMA topology optimization +
+* ✅ Kernel tuning parameters +
 
 This demonstrates **80% of low-latency concepts** at a fraction of the cost, making it ideal for workshops.
 
@@ -152,17 +152,17 @@ The script will automatically detect your instance type and validate RT kernel r
 
 For Single Node OpenShift (SNO) clusters, applying a Performance Profile will cause the **entire cluster to reboot**, making the API server unavailable for 10-20 minutes.
 
-**Automatic Optimizations for Virtualized Instances:**
-* The scripts automatically detect virtualized instances (e.g., `m5.4xlarge`)
-* For virtualized instances, the `nosmt` kernel parameter is **automatically skipped** to preserve hyperthreading
-* CPU allocation is automatically adjusted to be more conservative, reserving more CPUs for the control plane
-* This ensures the API server can start successfully after reboot
+**Automatic Optimizations for Virtualized Instances:** +
+* The scripts automatically detect virtualized instances (e.g., `m5.4xlarge`) +
+* For virtualized instances, the `nosmt` kernel parameter is **automatically skipped** to preserve hyperthreading +
+* CPU allocation is automatically adjusted to be more conservative, reserving more CPUs for the control plane +
+* This ensures the API server can start successfully after reboot +
 
-**If Your Node Gets Stuck After Reboot:**
-* Wait 20-30 minutes - configuration may still be applying
-* Check AWS instance status: `aws ec2 describe-instance-status --instance-ids <id>`
-* If node doesn't recover, delete the Performance Profile and recreate with more conservative settings
-* See the "Troubleshooting Common Issues" section for detailed recovery steps
+**If Your Node Gets Stuck After Reboot:** +
+* Wait 20-30 minutes - configuration may still be applying +
+* Check AWS instance status: `aws ec2 describe-instance-status --instance-ids <id>` +
+* If node doesn't recover, delete the Performance Profile and recreate with more conservative settings +
+* See the "Troubleshooting Common Issues" section for detailed recovery steps +
 ====
 
 . Determine optimal CPU allocation based on your cluster type:
@@ -253,21 +253,21 @@ The Performance Profile will trigger a rolling update of your nodes. This proces
 
 The Performance Profile applies kernel boot parameters (CPU isolation, HugePages, NUMA tuning) which **always require a node reboot**, regardless of RT kernel setting. The Machine Config Pool (MCP) will automatically trigger the reboot.
 
-**Expected Timeline:**
-* **SNO Clusters**: API server will be unavailable for 10-20 minutes during reboot
-* **Multi-Node Clusters**: Rolling update, one node at a time (10-20 minutes per node)
-* **RT Kernel Enabled**: Additional 5-10 minutes for RT kernel installation
+**Expected Timeline:** +
+* **SNO Clusters**: API server will be unavailable for 10-20 minutes during reboot +
+* **Multi-Node Clusters**: Rolling update, one node at a time (10-20 minutes per node) +
+* **RT Kernel Enabled**: Additional 5-10 minutes for RT kernel installation +
 
-**SNO-Specific Considerations:**
-* The entire cluster (API server) will be unavailable during the reboot
-* Plan for 15-30 minutes of downtime
-* Monitor the node status: `oc get nodes` (will show `NotReady` during reboot)
-* After reboot, wait for the node to show `Ready` status before proceeding
+**SNO-Specific Considerations:** +
+* The entire cluster (API server) will be unavailable during the reboot +
+* Plan for 15-30 minutes of downtime +
+* Monitor the node status: `oc get nodes` (will show `NotReady` during reboot) +
+* After reboot, wait for the node to show `Ready` status before proceeding +
 
-**Virtualized Instance Optimization:**
-* For virtualized AWS instances (e.g., `m5.4xlarge`), the `nosmt` kernel parameter is automatically skipped
-* This preserves hyperthreading and ensures sufficient CPUs remain for the control plane
-* CPU allocation is automatically adjusted to be more conservative for virtualized instances
+**Virtualized Instance Optimization:** +
+* For virtualized AWS instances (e.g., `m5.4xlarge`), the `nosmt` kernel parameter is automatically skipped +
+* This preserves hyperthreading and ensures sufficient CPUs remain for the control plane +
+* CPU allocation is automatically adjusted to be more conservative for virtualized instances +
 ====
 
 . Monitor Machine Config Pool status:
@@ -1195,35 +1195,35 @@ In this module, you have successfully implemented architecture-aware performance
 
 .*Architecture-Specific Achievements*
 
-**Single Node OpenShift (SNO):**
-* Conservative CPU allocation preserving control plane stability
-* Optimized HugePages configuration for resource-constrained environments
-* Master node targeting with appropriate performance isolation
+**Single Node OpenShift (SNO):** +
+* Conservative CPU allocation preserving control plane stability +
+* Optimized HugePages configuration for resource-constrained environments +
+* Master node targeting with appropriate performance isolation +
 
-**Multi-Node Clusters:**
-* Aggressive CPU isolation on dedicated worker nodes
-* Maximum performance optimization without control plane impact
-* Dedicated Machine Config Pool for isolated performance tuning
+**Multi-Node Clusters:** +
+* Aggressive CPU isolation on dedicated worker nodes +
+* Maximum performance optimization without control plane impact +
+* Dedicated Machine Config Pool for isolated performance tuning +
 
-**Multi-Master Clusters:**
-* Balanced CPU allocation for control plane and workload performance
-* Strategic node selection for performance optimization
-* Maintained cluster stability during rolling updates
+**Multi-Master Clusters:** +
+* Balanced CPU allocation for control plane and workload performance +
+* Strategic node selection for performance optimization +
+* Maintained cluster stability during rolling updates +
 
-.*Key Takeaways*
-* Performance Profiles adapt automatically to different cluster architectures
-* CPU isolation strategies must account for control plane requirements
-* Real-time kernels provide predictable, low-latency scheduling across all architectures
-* HugePages allocation should be sized appropriately for available resources
-* Proper architecture-aware tuning can achieve 50-70% latency improvements
-* SNO environments can achieve exceptional performance due to simplified architecture
+**Key Takeaways** +
+* Performance Profiles adapt automatically to different cluster architectures +
+* CPU isolation strategies must account for control plane requirements +
+* Real-time kernels provide predictable, low-latency scheduling across all architectures +
+* HugePages allocation should be sized appropriately for available resources +
+* Proper architecture-aware tuning can achieve 50-70% latency improvements +
+* SNO environments can achieve exceptional performance due to simplified architecture +
 
-.*Performance Impact Summary*
-Based on your cluster type, you should observe:
-* **Pod Creation Latency**: 50-70% reduction in P99 times
-* **Consistency**: Dramatically reduced variance between P50 and P99
-* **Jitter**: More predictable and deterministic response times
-* **Resource Utilization**: Optimized CPU and memory usage patterns
+.*Performance Impact Summary* +
+Based on your cluster type, you should observe: +
+* **Pod Creation Latency**: 50-70% reduction in P99 times +
+* **Consistency**: Dramatically reduced variance between P50 and P99 +
+* **Jitter**: More predictable and deterministic response times +
+* **Resource Utilization**: Optimized CPU and memory usage patterns +
 
 == Optional: Reverting Performance Tuning for Workshop Continuation
 
