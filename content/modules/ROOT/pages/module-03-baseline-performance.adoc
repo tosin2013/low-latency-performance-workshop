@@ -223,6 +223,14 @@ spec:
   containers:
   - name: baseline-container
     image: {{.containerImage}}
+    securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: "RuntimeDefault"
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
     command: ["sleep"]
     args: ["300"]
     resources:
