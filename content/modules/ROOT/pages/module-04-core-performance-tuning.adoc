@@ -481,10 +481,6 @@ This script validates:
 ----
 # Check CPU isolation configuration
 python3 ~/low-latency-performance-workshop/scripts/module04-cpu-isolation-checker.py
-
-# Specify a custom Performance Profile
-python3 ~/low-latency-performance-workshop/scripts/module04-cpu-isolation-checker.py \
-    --profile my-performance-profile
 ----
 +
 This script provides:
