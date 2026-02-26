@@ -65,27 +65,27 @@ Native integration between performance tuning, container orchestration, and ente
 
 Ready to start? Begin with Module 1 to understand the fundamentals, then progress through hands-on exercises that build upon each other.
 
-**Learning Path:**
-1. **Start Here**: xref:module-01-low-latency-intro.adoc[Module 1 - Low-Latency Fundamentals]
-2. **Environment Setup**: xref:module-02-environment-setup.adoc[Module 2 - Environment Setup and Verification] 
-3. **Performance Baseline**: xref:module-03-baseline-performance.adoc[Module 3 - Baseline Testing]
-4. **Core Optimization**: xref:module-04-core-performance-tuning.adoc[Module 4 - Performance Tuning]
+**Learning Path:** +
+1. **Start Here**: xref:module-01-low-latency-intro.adoc[Module 1 - Low-Latency Fundamentals] +
+2. **Environment Setup**: xref:module-02-environment-setup.adoc[Module 2 - Environment Setup and Verification] +
+3. **Performance Baseline**: xref:module-03-baseline-performance.adoc[Module 3 - Baseline Testing] +
+4. **Core Optimization**: xref:module-04-core-performance-tuning.adoc[Module 4 - Performance Tuning] +
 
-**Additional Resources:**
-* link:https://docs.openshift.com/container-platform/4.20/scalability_and_performance/what-huge-pages-do-and-how-they-are-consumed-by-apps.html[OpenShift Performance Documentation^]
-* link:https://github.com/cloud-bulldozer/kube-burner[Kube-burner Performance Testing^]
-* link:https://docs.openshift.com/container-platform/latest/virt/about-virt.html[OpenShift Virtualization Documentation^]
+**Additional Resources:** +
+* link:https://docs.openshift.com/container-platform/4.20/scalability_and_performance/what-huge-pages-do-and-how-they-are-consumed-by-apps.html[OpenShift Performance Documentation^] +
+* link:https://github.com/cloud-bulldozer/kube-burner[Kube-burner Performance Testing^] +
+* link:https://docs.openshift.com/container-platform/latest/virt/about-virt.html[OpenShift Virtualization Documentation^] +
 
 == Requirements for the Lab Environment
 
-**Prerequisites:**
-* Single Node OpenShift (SNO) 4.20+ cluster with cluster-admin privileges
-* SSH access to bastion host (pre-configured)
-* Terminal access with `oc` CLI configured (pre-configured on bastion)
-* Basic understanding of Kubernetes/OpenShift concepts
+**Prerequisites:** +
+* Single Node OpenShift (SNO) 4.20+ cluster with cluster-admin privileges +
+* SSH access to bastion host (pre-configured) +
+* Terminal access with `oc` CLI configured (pre-configured on bastion) +
+* Basic understanding of Kubernetes/OpenShift concepts +
 
-**Hardware Recommendations:**
-* Worker nodes with dedicated CPU cores (minimum 8 cores per node)
-* At least 32GB RAM per worker node for performance testing
-* SR-IOV capable network interfaces (for Module 5)
-* NVMe storage for optimal I/O performance
+**Hardware Recommendations:** +
+* Worker nodes with dedicated CPU cores (minimum 8 cores per node) +
+* At least 32GB RAM per worker node for performance testing +
+* SR-IOV capable network interfaces (for Module 5) +
+* NVMe storage for optimal I/O performance +
