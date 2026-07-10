@@ -1,0 +1,324 @@
+# onboard.yml — Onboarding manifest for Low-Latency Performance Workshop
+# Spec version 1.0
+#
+# This manifest automates the setup process for deploying the
+# Low-Latency Performance Workshop on OpenShift 4.20 using AgnosticD v2.
+
+name: Low-Latency Performance Workshop
+description: Hands-on OpenShift 4.20 performance optimization workshop (Hub + Spoke architecture)
+deploy_script: scripts/deploy-workshop.sh
+
+# ─────────────────────────────────────────────────────────────
+# Prerequisites
+# ─────────────────────────────────────────────────────────────
+
+prerequisites:
+  - name: python3
+    check_command: "python3 --version"
+    version_regex: "Python (\\d+\\.\\d+)"
+    min_version: "3.12"
+    install:
+      macos: "brew install python@3.12"
+      rhel9: "sudo dnf install -y python3.12"
+      rhel10: "sudo dnf install -y python3.12"
+      fedora: "sudo dnf install -y python3.12"
+      debian: "sudo apt-get install -y python3"
+      fallback: "Install Python 3.12+ from https://python.org"
+
+  - name: podman
+    check_command: "podman --version"
+    version_regex: "podman version (\\d+\\.\\d+)"
+    min_version: "5.0"
+    install:
+      macos: "brew install podman"
+      rhel9: "sudo dnf install -y podman"
+      rhel10: "sudo dnf install -y podman"
+      fedora: "sudo dnf install -y podman"
+      debian: "sudo apt-get install -y podman"
+      fallback: "Install Podman 5+ from https://podman.io"
+
+  - name: git
+    check_command: "git --version"
+    install:
+      macos: "brew install git"
+      rhel9: "sudo dnf install -y git"
+      rhel10: "sudo dnf install -y git"
+      fedora: "sudo dnf install -y git"
+      debian: "sudo apt-get install -y git"
+      fallback: "Install git from https://git-scm.com"
+
+  - name: jq
+    check_command: "jq --version"
+    install:
+      macos: "brew install jq"
+      rhel9: "sudo dnf install -y jq"
+      rhel10: "sudo dnf install -y jq"
+      fedora: "sudo dnf install -y jq"
+      debian: "sudo apt-get install -y jq"
+      fallback: "Install jq from https://jqlang.github.io/jq/"
+
+  - name: awscli
+    check_command: "aws --version"
+    version_regex: "aws-cli/(\\d+\\.\\d+)"
+    install:
+      macos: "brew install awscli"
+      rhel9: "sudo dnf install -y awscli2"
+      rhel10: "sudo dnf install -y awscli2"
+      fedora: "sudo dnf install -y awscli2"
+      debian: "sudo apt-get install -y awscli"
+      fallback: "Install AWS CLI from https://aws.amazon.com/cli/"
+
+  - name: sshpass
+    check_command: "command -v sshpass"
+    install:
+      macos: "brew install esolitos/ipa/sshpass"
+      rhel9: "sudo dnf install -y sshpass"
+      rhel10: "sudo dnf install -y sshpass"
+      fedora: "sudo dnf install -y sshpass"
+      debian: "sudo apt-get install -y sshpass"
+      fallback: "Install sshpass from your package manager"
+
+# ─────────────────────────────────────────────────────────────
+# Setup Steps
+# ─────────────────────────────────────────────────────────────
+
+setup_steps:
+  - name: "Create Development directory"
+    check: "test -d ~/Development"
+    action: "mkdir -p ~/Development"
+
+  - name: "Clone AgnosticD v2"
+    check: "test -f ${agnosticd_root}/bin/agd"
+    action: "git clone https://github.com/agnosticd/agnosticd-v2.git ${agnosticd_root}"
+    prompt_var: agnosticd_root
+    prompt: "AgnosticD v2 install path"
+    default: "~/Development/agnosticd-v2"
+
+  - name: "Run agd setup"
+    check: "test -d $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-vars"
+    action: "cd ${agnosticd_root} && ./bin/agd setup"
+
+  - name: "Copy workshop vars to agnosticd-v2-vars"
+    check: "test -f ${agnosticd_root}/../agnosticd-v2-vars/low-latency-sno-aws.yml"
+    action: "cp -f $(pwd)/agnosticd-v2-vars/*.yml ${agnosticd_root}/../agnosticd-v2-vars/"
+
+  - name: "Create secrets directory"
+    check: "test -d $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-secrets"
+    action: "mkdir -p $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-secrets"
+
+  - name: "Create output directory"
+    check: "test -d $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-output"
+    action: "mkdir -p $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-output"
+
+  - name: "Scaffold secrets.yml template"
+    check: "test -f $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-secrets/secrets.yml"
+    action: |
+      cat > $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-secrets/secrets.yml << 'SECRETS_EOF'
+      ---
+      # Satellite Repos (choose satellite OR rhn)
+      # host_satellite_repositories_hostname: <Your Satellite URL>
+      # host_satellite_repositories_ha: true
+      # host_satellite_repositories_org: <Your Org>
+      # host_satellite_repositories_activationkey: <Your Key>
+
+      # RHN Repos (alternative to satellite)
+      # host_rhn_repositories_username: <Your RHN Username>
+      # host_rhn_repositories_password: <Your RHN Password>
+
+      # OpenShift Pull Secret (required)
+      ocp4_pull_secret: '<Add your pull secret from console.redhat.com>'
+      SECRETS_EOF
+
+  - name: "Install cloud_provider_aws collection"
+    check: "test -d ${agnosticd_root}/ansible/collections/ansible_collections/agnosticd/cloud_provider_aws"
+    action: "source $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-virtualenv/bin/activate && ansible-galaxy collection install git+https://github.com/agnosticd/cloud_provider_aws.git -p ${agnosticd_root}/ansible/collections"
+
+  - name: "Install core_workloads collection"
+    check: "test -d ${agnosticd_root}/ansible/collections/ansible_collections/agnosticd/core_workloads"
+    action: "source $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-virtualenv/bin/activate && ansible-galaxy collection install git+https://github.com/agnosticd/core_workloads.git -p ${agnosticd_root}/ansible/collections"
+
+# ─────────────────────────────────────────────────────────────
+# Configuration Prompts
+# ─────────────────────────────────────────────────────────────
+
+config:
+  output_file: workshop-config.yml
+  gitignore: true
+
+  prompts:
+    - key: account
+      prompt: "AWS sandbox account name (e.g., sandbox1234)"
+      default: "sandbox1234"
+      required: true
+
+    - key: aws_region
+      prompt: "AWS region for deployment"
+      default: "us-east-2"
+
+    - key: num_students
+      prompt: "Number of student clusters to deploy"
+      default: "2"
+
+    - key: owner_email
+      prompt: "Owner email (for AWS resource tags)"
+      default: ""
+      required: true
+
+    - key: github_username
+      prompt: "GitHub username (for SSH key access to bastions)"
+      default: "auto"
+
+    - key: instance_type
+      prompt: "SNO instance type"
+      choices: ["m5.4xlarge", "m5.8xlarge", "m5zn.metal", "m5.metal"]
+      default: "m5.4xlarge"
+
+    - key: deploy_hub
+      prompt: "Deploy Hub cluster for Showroom? (needed for multi-student)"
+      choices: ["true", "false"]
+      default: "true"
+
+    - key: pull_secret_path
+      prompt: "Path to OpenShift pull secret file"
+      default: "~/pull-secret.json"
+
+    - key: agnosticd_root
+      prompt: "AgnosticD v2 install path"
+      default: "~/Development/agnosticd-v2"
+
+# ─────────────────────────────────────────────────────────────
+# Validation Checks
+# ─────────────────────────────────────────────────────────────
+
+validation:
+  - name: "AWS credentials configured"
+    command: "aws sts get-caller-identity 2>/dev/null"
+    required: false
+    fail_message: >-
+      AWS credentials not configured. Get credentials from demo.redhat.com
+      (AWS Open Environment) and run 'aws configure' or set
+      AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY environment variables.
+
+  - name: "Pull secret exists"
+    command: "test -f ${pull_secret_path}"
+    required: true
+    fail_message: >-
+      Pull secret not found at ${pull_secret_path}.
+      Download from https://console.redhat.com/openshift/downloads#tool-pull-secret
+
+  - name: "Pull secret is valid JSON"
+    command: "python3 -m json.tool ${pull_secret_path} > /dev/null 2>&1"
+    required: true
+    fail_message: "Pull secret file is not valid JSON. Re-download it from console.redhat.com."
+
+  - name: "AgnosticD agd binary"
+    command: "test -x ${agnosticd_root}/bin/agd"
+    required: true
+    fail_message: "AgnosticD agd binary not found. Re-run onboarding or clone manually from https://github.com/agnosticd/agnosticd-v2"
+
+  - name: "Secrets file exists for account"
+    command: "test -f $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-secrets/secrets-${account}.yml"
+    required: true
+    fail_message: >-
+      Secrets file not found for account '${account}'.
+      Run 'make setup' to auto-create it, then fill in your AWS credentials.
+
+  - name: "Base secrets.yml exists"
+    command: "test -f $(cd $(dirname ${agnosticd_root}) && pwd)/agnosticd-v2-secrets/secrets.yml"
+    required: true
+    fail_message: "Base secrets.yml not found. Re-run 'make setup' to generate it."
+
+  - name: "Workshop vars files present"
+    command: "test -f ${agnosticd_root}/../agnosticd-v2-vars/low-latency-sno-aws.yml"
+    required: true
+    fail_message: "Workshop vars not found in agnosticd-v2-vars/. Re-run onboarding to copy them."
+
+  - name: "Podman machine running (macOS only)"
+    command: "podman info > /dev/null 2>&1"
+    required: false
+    fail_message: >-
+      Podman is not running. On macOS run 'podman machine init && podman machine start'.
+      On Linux this usually means the podman socket is not active.
+
+# ─────────────────────────────────────────────────────────────
+# Quota Checks — disabled (handled via post-setup guidance)
+# ─────────────────────────────────────────────────────────────
+# AWS quota queries are fragile across different account types.
+# Instead, we guide users to verify quotas manually or use the
+# AWS Service Quotas console before deploying.
+quota_checks: []
+
+# ─────────────────────────────────────────────────────────────
+# Post-Setup Message
+# ─────────────────────────────────────────────────────────────
+
+post_setup:
+  message: |
+    Setup complete! Your environment is ready.
+
+    ═══════════════════════════════════════════════════════════
+    NEXT STEPS
+    ═══════════════════════════════════════════════════════════
+
+    1. Verify your secrets were configured correctly:
+       ~/Development/agnosticd-v2-secrets/secrets-${account}.yml  (AWS creds)
+       ~/Development/agnosticd-v2-secrets/secrets.yml             (pull secret)
+
+       If credentials were not auto-detected, edit these files manually.
+
+    2. Deploy the full workshop (Hub + Student clusters):
+       ./scripts/deploy-workshop.sh \
+         --hub-account ${account} \
+         --student-account ${account} \
+         --students student1,student2
+
+       Or deploy a single SNO cluster:
+       ./scripts/deploy-sno.sh student1 ${account}
+
+    3. Check status:
+       ./scripts/status-sno.sh student1 ${account}
+
+    4. Destroy when done:
+       ./scripts/destroy-sno.sh student1 ${account}
+
+    ═══════════════════════════════════════════════════════════
+    DOCUMENTATION
+    ═══════════════════════════════════════════════════════════
+
+    - Deployment README: DEPLOYMENT-README.md
+    - Setup Guide:       docs/WORKSHOP_SETUP.md
+    - AgnosticD Vars:    agnosticd-v2-vars/README.md
+
+# ─────────────────────────────────────────────────────────────
+# Modes (dev = content contributors, prod = workshop deployers)
+# ─────────────────────────────────────────────────────────────
+
+modes:
+  dev:
+    description: "Set up contributor environment for workshop content development"
+    phases: [prerequisites, setup_steps, config, validation]
+    extra_prerequisites:
+      - name: nodejs
+        check_command: "node --version"
+        version_regex: "v(\\d+\\.\\d+)"
+        min_version: "18.0"
+        install:
+          macos: "brew install node"
+          rhel9: "sudo dnf install -y nodejs"
+          rhel10: "sudo dnf install -y nodejs"
+          fedora: "sudo dnf install -y nodejs"
+          debian: "sudo apt-get install -y nodejs"
+          fallback: "Install Node.js 18+ from https://nodejs.org"
+      - name: shellcheck
+        check_command: "command -v shellcheck"
+        install:
+          macos: "brew install shellcheck"
+          rhel9: "sudo dnf install -y ShellCheck"
+          rhel10: "sudo dnf install -y ShellCheck"
+          fedora: "sudo dnf install -y ShellCheck"
+          debian: "sudo apt-get install -y shellcheck"
+          fallback: "Install ShellCheck from https://www.shellcheck.net/"
+  prod:
+    description: "Set up and deploy workshop infrastructure for students"
+    phases: [prerequisites, setup_steps, config, validation, deploy]
+    post_validation_command: "./scripts/deploy-workshop.sh --hub-account ${account} --student-account ${account} --students student1,student2"
