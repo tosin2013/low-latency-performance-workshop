@@ -155,53 +155,57 @@ low-latency-performance-workshop/
 
 === For Workshop Instructors
 
-1. **Review the setup guide**: See link:docs/WORKSHOP_SETUP.md[Workshop Setup Guide]
-2. **Review the DEVELOPER_GUIDE.md** for comprehensive setup instructions
-3. **Configure workshop environment** using ENVIRONMENT_CONFIG.md
-4. **Validate environment setup** using provided validation scripts
-5. **Customize content** for your specific audience if needed
-6. **Deploy workshop infrastructure** using the deployment scripts
+[source,bash]
+----
+git clone https://github.com/tosin2013/low-latency-performance-workshop.git
+cd low-latency-performance-workshop
+make setup
+----
+
+That's it. The setup script checks prerequisites, installs dependencies, detects your AWS credentials and pull secret, verifies quotas, and prompts to deploy.
 
 === For Contributors
 
-1. **Fork the repository** and create a feature branch
-2. **Follow AsciiDoc style guidelines** in DEVELOPER_GUIDE.md
-3. **Test changes** with actual workshop environment
-4. **Submit pull requests** with clear descriptions
-5. **Update documentation** as needed
-
-== Workshop Deployment (Quick Start)
-
-=== Step 1: Initial Setup (5 minutes)
-
 [source,bash]
 ----
-# Clone the repository
 git clone https://github.com/tosin2013/low-latency-performance-workshop.git
 cd low-latency-performance-workshop
-
-# Run the setup script
-./scripts/workshop-setup.sh
+make setup-dev
 ----
 
-=== Step 2: Configure Secrets
+This installs the same prerequisites plus dev tools (shellcheck, nodejs) for content development.
 
-Edit the secrets files created in `~/Development/agnosticd-v2-secrets/`:
+== Quick Start
+
+=== Prerequisites
+
+* RHEL 9 / Fedora / macOS with Podman 5+, Python 3.12+, AWS CLI
+* AWS sandbox from https://demo.redhat.com[demo.redhat.com] (Open Environment)
+* OpenShift pull secret from https://console.redhat.com/openshift/downloads[console.redhat.com]
+* `aws configure` run with your sandbox credentials
+
+=== One-Command Setup
 
 [source,bash]
 ----
-# Add your OpenShift pull secret
-vim ~/Development/agnosticd-v2-secrets/secrets.yml
-
-# Add AWS credentials (rename XXX to your sandbox number)
-cp ~/Development/agnosticd-v2-secrets/secrets-sandboxXXX.yml \
-   ~/Development/agnosticd-v2-secrets/secrets-sandbox5466.yml
-vim ~/Development/agnosticd-v2-secrets/secrets-sandbox5466.yml
+git clone https://github.com/tosin2013/low-latency-performance-workshop.git
+cd low-latency-performance-workshop
+make setup
 ----
 
-=== Step 3: Deploy Full Workshop (Automated)
+The `make setup` command will:
 
-Use the automated deployment script to deploy Hub + Student clusters:
+1. Check and install prerequisites (podman, git, jq, awscli, sshpass)
+2. Clone AgnosticD v2 and install Ansible collections
+3. Prompt for configuration (sandbox account, region, student count)
+4. Auto-detect AWS credentials and pull secret
+5. Validate the environment (6 checks)
+6. Verify AWS quotas (vCPUs, Elastic IPs, VPCs)
+7. Prompt to deploy when everything passes
+
+=== Deploy Full Workshop (Automated)
+
+After `make setup` completes, deploy Hub + Student clusters:
 
 [source,bash]
 ----
@@ -258,20 +262,49 @@ cd ~/low-latency-performance-workshop
 ./scripts/deploy-student-showrooms.sh --students student1,student2
 ----
 
+=== Makefile Commands
+
+[cols="1,2"]
+|===
+| Command | Description
+
+| `make setup`
+| Full interactive onboarding (prod mode)
+
+| `make setup-dev`
+| Contributor/maintainer setup (dev mode)
+
+| `make check`
+| Run validation checks only (CI-friendly)
+
+| `make quota`
+| Check AWS quotas
+
+| `make deploy`
+| Deploy full workshop (Hub + Students)
+
+| `make deploy-sno STUDENT=student1 ACCOUNT=sandbox5466`
+| Deploy a single SNO cluster
+
+| `make status STUDENT=student1 ACCOUNT=sandbox5466`
+| Check cluster status
+
+| `make destroy STUDENT=student1 ACCOUNT=sandbox5466`
+| Destroy a cluster
+|===
+
 === Check Status
 
 [source,bash]
 ----
-./scripts/status-sno.sh student1 sandbox5466
+make status STUDENT=student1 ACCOUNT=sandbox5466
 ----
 
 === Destroy Clusters
 
 [source,bash]
 ----
-cd ~/Development/agnosticd-v2
-./bin/agd destroy -g student1 -c low-latency-sno-aws -a sandbox5466
-./bin/agd destroy -g hub -c workshop-hub-aws -a sandbox5466
+make destroy STUDENT=student1 ACCOUNT=sandbox5466
 ----
 
 For complete setup instructions, see link:docs/WORKSHOP_SETUP.md[Workshop Setup Guide] and link:agnosticd-v2-vars/README.md[AgnosticD Configuration Guide].
