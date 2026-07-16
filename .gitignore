@@ -85,6 +85,10 @@ BASTION_DEPLOYMENT_AUDIT.md
 CLUSTER_ACCESS_INFO.md
 DEPLOYMENT_AUDIT.md
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # macOS
 .DS_Store
 
